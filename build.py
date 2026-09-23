@@ -23,6 +23,7 @@ import hashlib
 import argparse
 import sys
 import base64
+import collections
 
 # 修复 Windows GBK 编码问题
 if hasattr(sys.stdout, 'reconfigure'):
@@ -2849,6 +2850,135 @@ AUDIT_THRESHOLDS = {
 }
 
 
+# 位置敏感的选项：这类选项必须固定在末位，旋转会破坏其语义，故跳过硬性重排
+_FIXED_OPTION = re.compile(r'以上|上述|全都|都不对|都正确|其余|其他各项|前三项|后三项')
+
+
+def _strip_option_prefix(text):
+    """去掉选项开头的「A.」「B、」等标号，只留正文。"""
+    return re.sub(r'^\s*[A-E]\s*[.、）)]?\s*', '', text).strip()
+
+
+def balance_answer_positions(questions):
+    """构建期重排选项顺序，使正确答案在 A/B/C/D 上均匀分布。
+
+    【问题】
+    大模型出题存在系统性的位置偏好——倾向于把正确答案放在中间位置。
+    实测某 1122 题题库的 383 道单选：A 1.3% / B 48.0% / C 44.6% / D 6.0%。
+    后果有二：完全不会的学生一律押注 B 或 C 即可获得约 46% 的正确率；
+    A、D 近乎可无条件排除——题目失去区分度，退化为「复习提纲」而非「自测工具」。
+
+    【原理】
+    选项的**顺序**对题目语义没有约束（题干问的是「下列哪一项」，不指向位置）。
+    因此可以在构建时机械地**循环旋转**选项，把正确答案搬到分布偏少的字母上——
+    整个过程无需理解题目内容，纯位置变换：
+
+        ABCD → BCDA      答案字母由 A 变为 D（随内容一起移动）
+
+    仅一类例外必须排除：含「以上都对」「上述各项」等**指代位置**的选项，
+    它们天然要求固定末位，旋转会破坏语义。本函数会跳过这类题。
+
+    【算法】
+      1. 统计当前各字母数量，算出每个字母的目标数量（均分，余数分给靠前的字母）
+      2. 超出目标的字母为「超额」，不足的为「缺口」（二者总量必然相等）
+      3. 从超额字母的题目中确定性地挑出待移动的题（按题目 ID 哈希排序，
+         保证同一题库每次构建得到完全相同的挑选结果）
+      4. 把缺口字母序列与待移动题目配对，逐题旋转到目标位置
+
+    【稳定性保证】
+      - **结果可复现**：选择依据是题目 ID 的哈希，不含随机数，重复构建结果一致
+      - **不影响用户进度**：题目 ID 基于「分节名 + 题干」生成，与选项顺序无关，
+        旋转选项不会改变 ID，用户既有的作答记录 / 错题池 / 收藏均不受影响
+      - **不触碰解析**：本函数只改选项顺序与答案字母；若解析文字里显式引用了
+        「A项」「B项」，旋转后该引用会失准。此类题会在构建结果中列出，供人工核对。
+
+    【可关闭】
+      --no-balance 跳过本步骤，保持题库原始顺序。
+
+    返回 (重排题数, 跳过的题列表, 引用字母的题列表)。
+    """
+    import collections
+
+    letters = 'ABCD'
+    movable, skipped = [], []
+    for q in questions:
+        if q['type'] != 'single' or len(q['options']) != 4:
+            continue
+        ans = re.findall(r'[A-E]', q['answer'])
+        if len(ans) != 1 or ans[0] not in letters:
+            continue
+        if any(_FIXED_OPTION.search(_strip_option_prefix(o)) for o in q['options']):
+            skipped.append(q)
+            continue
+        movable.append(q)
+
+    if not movable:
+        return 0, skipped, []
+
+    n = len(movable)
+    base, rem = divmod(n, 4)
+    target = {letters[i]: base + (1 if i < rem else 0) for i in range(4)}
+
+    counts = collections.Counter(re.findall(r'[A-E]', q['answer'])[0] for q in movable)
+    excess = {L: counts[L] - target[L] for L in letters if counts[L] > target[L]}
+    deficit = {L: target[L] - counts[L] for L in letters if target[L] > counts[L]}
+
+    # 缺口字母序列，交错排列（A B C D A B C D…），避免同类集中
+    need = []
+    while any(v > 0 for v in deficit.values()):
+        for L in letters:
+            if deficit.get(L, 0) > 0:
+                need.append(L)
+                deficit[L] -= 1
+    if not need:
+        return 0, skipped, []
+
+    # 待移动的题：只从「超额字母」里取，数量恰好等于超额数
+    pool = []
+    for L in letters:
+        if excess.get(L, 0) > 0:
+            same = [q for q in movable if re.findall(r'[A-E]', q['answer'])[0] == L]
+            same.sort(key=lambda q: hashlib.md5(q['id'].encode()).hexdigest())
+            pool.extend(same[:excess[L]])
+    pool.sort(key=lambda q: hashlib.md5(q['id'].encode()).hexdigest())
+
+    moved = 0
+    for q, dest in zip(pool, need):
+        cur = re.findall(r'[A-E]', q['answer'])[0]
+        k = (letters.index(dest) - letters.index(cur)) % 4
+        if k == 0:
+            continue
+        old = [_strip_option_prefix(o) for o in q['options']]
+        # 循环右移 k 位：新位置 i 取自旧位置 (i-k)
+        q['options'] = ['%s. %s' % (letters[i], old[(i - k) % 4]) for i in range(4)]
+        q['answer'] = dest
+        moved += 1
+
+    # 解析中显式引用了选项字母的题（旋转后会失准），列出供人工核对
+    ref = re.compile(r'(?<![A-Za-z])[A-D]\s*[项項]')
+    letter_refs = [q for q in movable if ref.search(q.get('explanation') or '')]
+
+    return moved, skipped, letter_refs
+
+
+def print_balance_report(moved, skipped, letter_refs, before, after):
+    """打印答案位置均衡的处理报告。"""
+    if moved == 0 and not skipped:
+        return
+    print(f"\n⚖️  答案位置均衡")
+    if before and after:
+        b = ' / '.join('%s%d' % (k, before[k]) for k in 'ABCD')
+        a = ' / '.join('%s%d' % (k, after[k]) for k in 'ABCD')
+        print(f"  {b}  →  {a}")
+    print(f"  已重排 {moved} 道单选（选项顺序循环移位，答案随之移动）")
+    if skipped:
+        print(f"  跳过 {len(skipped)} 道（含「以上都对」等位置敏感选项）")
+    if letter_refs:
+        print(f"  ⚠️  {len(letter_refs)} 道题的解析引用了选项字母，重排后可能失准，建议核对：")
+        for q in letter_refs[:5]:
+            print(f"     · {q['question'][:38]}")
+
+
 def quality_audit(questions):
     """构建后质量自检：把内容规范的量化标准变成可自动核查的指标。
 
@@ -3015,6 +3145,8 @@ def main():
     parser.add_argument('--katex', action='store_true', help='启用 KaTeX 公式渲染')
     parser.add_argument('--no-audit', dest='no_audit', action='store_true',
                         help='跳过构建后的质量自检（默认执行：检查答案位置分布 / 全选率 / 选项长度 / ID 唯一性）')
+    parser.add_argument('--no-balance', dest='no_balance', action='store_true',
+                        help='跳过答案位置均衡（默认执行：构建时重排选项，使正确答案均匀分布在 A/B/C/D）')
     parser.add_argument('--no-smart-quotes', '--no-punct-fix', dest='no_punct_fix',
                         action='store_true',
                         help='关闭构建期的中文标点规范化（引号 / 省略号 / 破折号）')
@@ -3097,6 +3229,20 @@ def main():
 
     all_tags = sorted(set(q['tag'] for q in all_questions if q['tag']))
     print(f"🏷️  知识点标签: {len(all_tags)} 个")
+
+    # 答案位置均衡：构建期机械重排选项顺序，把答案均匀分散到 A/B/C/D。
+    # 必须在质量自检**之前**执行，这样自检报告的是重排后的最终状态。
+    if not args.no_balance:
+        _before = collections.Counter(
+            re.findall(r'[A-E]', q['answer'])[0] for q in all_questions
+            if q['type'] == 'single' and len(re.findall(r'[A-E]', q['answer'])) == 1)
+        _moved, _skipped, _refs = balance_answer_positions(all_questions)
+        _after = collections.Counter(
+            re.findall(r'[A-E]', q['answer'])[0] for q in all_questions
+            if q['type'] == 'single' and len(re.findall(r'[A-E]', q['answer'])) == 1)
+        print_balance_report(_moved, _skipped, _refs,
+                             {k: _before.get(k, 0) for k in 'ABCD'},
+                             {k: _after.get(k, 0) for k in 'ABCD'})
 
     # 质量自检：把 SKILL.md 的内容规范量化后自动核查（只告警，不阻断构建）。
     # 用 --no-audit 可跳过，适用于不关心内容指标、只求快速出页面的场景。
