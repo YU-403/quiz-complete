@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# 构建产物（题库由本题库项目生成，不进 skill 仓库）
+index.html
+build.bat
+
+# 备份
+*.bak
+
+# 打包中间物
+_dist/
