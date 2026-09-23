@@ -2841,12 +2841,18 @@ def parse_question_block(text, filename):
 # 与 SKILL.md「通用命题底座」中的量化规范一一对应，调整时两边须同步。
 # 阈值不是「合格线」而是「告警线」——超过即提示，由使用者判断是否修订。
 AUDIT_THRESHOLDS = {
-    # 单选题单一选项占比上限（%）。理想为均分 25%，留出宽容度至 35%
+    # 单选题单一选项占比上限（%）。理想为均分 25%，留出宽容度至 35%。
+    # 注：构建时已自动均衡答案位置，正常情况不会触发本阈值；
+    # 保留此检查是为了在均衡被 --no-balance 关闭时仍能发现问题。
     'single_pos_max_pct': 35,
-    # 不定项全选率上限（%）。全选题无区分度，应尽量少
-    'multi_full_max_pct': 30,
-    # 选项长度极差告警阈值（字）。实测 ≥8 字时约 95% 的题答案是唯一最长项
-    'opt_len_gap_max': 8,
+    # 不定项全选率上限（%）。全选题不给学生任何区分信息，一律全选即可得分，
+    # 故从严限制：每 10 道不定项中最多 1 道允许四项全对。
+    'multi_full_max_pct': 10,
+    # 选项长度极差上限（字）。
+    # 实测：极差 ≥8 字时约 95% 的题答案是那个最长选项，<8 字时降至 46%（接近随机）。
+    # 此处刻意取 6 字这一更严的标准——出题时从严要求，为实际执行留出余量；
+    # 若取实测拐点 8 字，标准一旦贴近底线，执行容易继续下滑。
+    'opt_len_gap_max': 6,
 }
 
 
@@ -3048,19 +3054,20 @@ def quality_audit(questions):
 
     # ---- 4. 选项长度极差 ----
     # 正确答案若显著长于干扰项，长度本身就成了提示（实测极差≥8 字时约 95% 是答案）。
-    # 此处只统计「极差超阈值」的题数，不修改题库——修订与否由使用者判断。
+    # 判据是「超过上限」而非「达到上限」：规范写「不超过 N 字」，则极差恰为 N 的题达标。
+    # 此处只统计超标题数，不修改题库——修订与否由使用者判断。
     longs = []
     for q in questions:
         if len(q['options']) < 3:
             continue
         lens = [len(re.sub(r'\*\*(.+?)\*\*', r'\1', o)) for o in q['options']]
         gap = max(lens) - min(lens)
-        if gap >= T['opt_len_gap_max']:
+        if gap > T['opt_len_gap_max']:
             longs.append((q, gap))
     stats['opt_len_long'] = len(longs)
     if longs:
         worst = max(longs, key=lambda x: x[1])
-        warns.append('选项长度极差 ≥%d 字的有 %d 道（最大 %d 字）——长度可能泄露答案'
+        warns.append('选项长度极差超过 %d 字的有 %d 道（最大 %d 字）——长度可能泄露答案'
                      % (T['opt_len_gap_max'], len(longs), worst[1]))
 
     return stats, warns
