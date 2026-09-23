@@ -2834,6 +2834,130 @@ def parse_question_block(text, filename):
     }
 
 
+# ============================================================
+# 质量自检阈值
+# ============================================================
+# 与 SKILL.md「通用命题底座」中的量化规范一一对应，调整时两边须同步。
+# 阈值不是「合格线」而是「告警线」——超过即提示，由使用者判断是否修订。
+AUDIT_THRESHOLDS = {
+    # 单选题单一选项占比上限（%）。理想为均分 25%，留出宽容度至 35%
+    'single_pos_max_pct': 35,
+    # 不定项全选率上限（%）。全选题无区分度，应尽量少
+    'multi_full_max_pct': 30,
+    # 选项长度极差告警阈值（字）。实测 ≥8 字时约 95% 的题答案是唯一最长项
+    'opt_len_gap_max': 8,
+}
+
+
+def quality_audit(questions):
+    """构建后质量自检：把内容规范的量化标准变成可自动核查的指标。
+
+    【为什么需要】
+    内容规范（选项等长、答案不扎堆、不定项不全选）写在 SKILL.md 里只是「原则」，
+    出题时是否遵守全靠临场；即便违反，构建也不会提示，问题要到用户做题时才暴露。
+    本函数把规范变成构建时的**可观测指标**，使偏离立刻可见。
+
+    【设计原则】
+    - 只告警、不中断：质量指标是「提示」而非「阻断」，避免因阈值争议妨碍正常构建
+    - 阈值集中定义在 AUDIT_THRESHOLDS，便于统一调整
+    - 指标口径与 SKILL.md 命题规范一一对应，两边同时改
+
+    返回 (统计字典, 告警列表)。
+    """
+    import collections
+
+    T = AUDIT_THRESHOLDS
+    stats = {}
+    warns = []
+
+    # ---- 1. 题目 ID 唯一性 ----
+    # ID 决定用户进度（作答记录 / 错题池 / 收藏）指向哪道题。
+    # 若两题共用一个 ID，做对其一会让另一题也显示为已作答 —— 属功能性缺陷，故单独提示。
+    # 注意：哈希只能降低碰撞概率，「唯一」必须靠检查来保证。
+    idc = collections.Counter(q['id'] for q in questions)
+    dup = {k: v for k, v in idc.items() if v > 1}
+    stats['id_dup_groups'] = len(dup)
+    stats['id_dup_questions'] = sum(dup.values())
+    if dup:
+        warns.append('题目 ID 重复 %d 组（涉及 %d 道）——两道题会共用作答记录'
+                     % (len(dup), sum(dup.values())))
+
+    # ---- 2. 单选题答案位置分布 ----
+    # 大模型出题有把正确答案放在 B/C 的倾向。若分布过度集中，
+    # 不会的学生一律押注高频选项即可获得可观正确率，且低频选项近乎可无条件排除。
+    singles = [q for q in questions
+               if q['type'] == 'single' and len(re.findall(r'[A-E]', q['answer'])) == 1]
+    if singles:
+        pos = collections.Counter(re.findall(r'[A-E]', q['answer'])[0] for q in singles)
+        n = len(singles)
+        stats['single_total'] = n
+        stats['single_pos'] = {k: pos.get(k, 0) for k in 'ABCD'}
+        top = max(pos.values())
+        top_pct = 100.0 * top / n
+        stats['single_top_pct'] = top_pct
+        if top_pct > T['single_pos_max_pct']:
+            detail = ' / '.join('%s%d(%.0f%%)' % (k, pos.get(k, 0), 100.0 * pos.get(k, 0) / n)
+                                for k in 'ABCD')
+            warns.append('答案位置偏斜：%s，最高项占 %.0f%%（上限 %d%%）——押注单一选项即可得分'
+                         % (detail, top_pct, T['single_pos_max_pct']))
+
+    # ---- 3. 不定项全选率 ----
+    # 「全选」题不给学生任何区分信息：一律全选即可得分。
+    # 全选率过高时，不定项选择题退化为送分题，失去考查作用。
+    multis = [q for q in questions if q['type'] == 'multiple']
+    if multis:
+        full = sum(1 for q in multis
+                   if len(re.findall(r'[A-E]', q['answer'])) >= 4)
+        pct = 100.0 * full / len(multis)
+        stats['multi_total'] = len(multis)
+        stats['multi_full'] = full
+        stats['multi_full_pct'] = pct
+        if pct > T['multi_full_max_pct']:
+            warns.append('不定项全选率 %.0f%%（%d/%d，上限 %d%%）——一律全选即可得分'
+                         % (pct, full, len(multis), T['multi_full_max_pct']))
+
+    # ---- 4. 选项长度极差 ----
+    # 正确答案若显著长于干扰项，长度本身就成了提示（实测极差≥8 字时约 95% 是答案）。
+    # 此处只统计「极差超阈值」的题数，不修改题库——修订与否由使用者判断。
+    longs = []
+    for q in questions:
+        if len(q['options']) < 3:
+            continue
+        lens = [len(re.sub(r'\*\*(.+?)\*\*', r'\1', o)) for o in q['options']]
+        gap = max(lens) - min(lens)
+        if gap >= T['opt_len_gap_max']:
+            longs.append((q, gap))
+    stats['opt_len_long'] = len(longs)
+    if longs:
+        worst = max(longs, key=lambda x: x[1])
+        warns.append('选项长度极差 ≥%d 字的有 %d 道（最大 %d 字）——长度可能泄露答案'
+                     % (T['opt_len_gap_max'], len(longs), worst[1]))
+
+    return stats, warns
+
+
+def print_quality_audit(stats, warns):
+    """打印质量自检结果。"""
+    print(f"\n🔍 质量自检")
+    if stats.get('single_total'):
+        p = stats['single_pos']
+        n = stats['single_total']
+        print('  答案位置  A%d / B%d / C%d / D%d（%d 道单选）'
+              % (p['A'], p['B'], p['C'], p['D'], n))
+    if stats.get('multi_total'):
+        print('  不定项    全选 %d/%d = %.0f%%'
+              % (stats['multi_full'], stats['multi_total'], stats['multi_full_pct']))
+    if stats.get('opt_len_long'):
+        print('  选项长度  极差超标 %d 道' % stats['opt_len_long'])
+    print('  ID 唯一性 %s'
+          % ('✅ 无重复' if not stats.get('id_dup_groups')
+             else '⚠️  %d 组重复' % stats['id_dup_groups']))
+    for w in warns:
+        print('  ⚠️  %s' % w)
+    if not warns:
+        print('  ✅ 全部指标在阈值内')
+
+
 def parse_file(filepath):
     """返回 (section_name, questions, failed)。
 
@@ -2889,6 +3013,8 @@ def main():
     parser.add_argument('--style', choices=list(STYLES.keys()), default='宣纸',
                         help='视觉风格')
     parser.add_argument('--katex', action='store_true', help='启用 KaTeX 公式渲染')
+    parser.add_argument('--no-audit', dest='no_audit', action='store_true',
+                        help='跳过构建后的质量自检（默认执行：检查答案位置分布 / 全选率 / 选项长度 / ID 唯一性）')
     parser.add_argument('--no-smart-quotes', '--no-punct-fix', dest='no_punct_fix',
                         action='store_true',
                         help='关闭构建期的中文标点规范化（引号 / 省略号 / 破折号）')
@@ -2971,6 +3097,12 @@ def main():
 
     all_tags = sorted(set(q['tag'] for q in all_questions if q['tag']))
     print(f"🏷️  知识点标签: {len(all_tags)} 个")
+
+    # 质量自检：把 SKILL.md 的内容规范量化后自动核查（只告警，不阻断构建）。
+    # 用 --no-audit 可跳过，适用于不关心内容指标、只求快速出页面的场景。
+    if not args.no_audit:
+        _stats, _warns = quality_audit(all_questions)
+        print_quality_audit(_stats, _warns)
 
     # 版本哈希
     content_hash = hashlib.md5(json.dumps(all_questions, ensure_ascii=False).encode()).hexdigest()[:8]
