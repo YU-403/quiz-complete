@@ -3,7 +3,7 @@
 """
 《刷题网站生成器》— 统一构建脚本
 用法: python build.py --input <题库路径> --title <标题> --output <输出目录>
-                      [--modes topic,random,career,wrong,tag] [--style 宣纸|瑞士|卡片]
+                      [--modes topic,random,career,wrong,tag,exam] [--style 宣纸|瑞士|卡片]
                       [--katex] [--prefix <存储前缀>]
 
 依赖: Python 标准库（os, re, json, hashlib, argparse），零第三方依赖。
@@ -2884,8 +2884,8 @@ def main():
     parser.add_argument('--input', required=True, help='题库 Markdown 文件夹路径')
     parser.add_argument('--title', required=True, help='网站标题')
     parser.add_argument('--output', required=True, help='输出目录')
-    parser.add_argument('--modes', default='topic,random,career,wrong,tag',
-                        help='启用的模式，逗号分隔（默认: topic,random,career,wrong,tag）')
+    parser.add_argument('--modes', default='topic,random,career,wrong,tag,exam',
+                        help='启用的模式，逗号分隔（默认六种全开: topic,random,career,wrong,tag,exam）')
     parser.add_argument('--style', choices=list(STYLES.keys()), default='宣纸',
                         help='视觉风格')
     parser.add_argument('--katex', action='store_true', help='启用 KaTeX 公式渲染')
@@ -2922,8 +2922,15 @@ def main():
         print(f"\n📄 解析: {fname}")
         with open(fp, 'r', encoding='utf-8') as _f:
             raw_content = _f.read()
-        all_text_for_variant.append(raw_content)
-        total_blocks += len(re.findall(r'###\s*第\s*\d+\s*[题題]', raw_content))
+        # [空板块修复] 逐文件统计题块数。此前用全局累加值，无法判断「本文件」是否有题，
+        # 导致题库目录旁的 README / 笔记 / 规划文档（无题块的 .md）也被当作题集处理。
+        file_blocks = len(re.findall(r'###\s*第\s*\d+\s*[题題]', raw_content))
+        total_blocks += file_blocks
+        # [语体判定污染修复] 只让「含题的文件」参与繁简语体判定。
+        # 无题文档（README、笔记）通常是简体，混入后会拉低繁体比例，使繁体题库被误判为简体，
+        # 进而让界面语体与题库不一致。排除它们可保证判定只反映题目本身。
+        if file_blocks:
+            all_text_for_variant.append(raw_content)
         section_name, questions, failed = parse_file(fp)
         total_parsed += len(questions)
         if failed:
@@ -2936,7 +2943,13 @@ def main():
                         print(f"  [!] 交叉校验冲突: {fname} 第 {q['id']} 题")
         start_idx = len(all_questions)
         all_questions.extend(questions)
-        section_map[section_name] = list(range(start_idx, len(all_questions)))
+        # [空板块修复] 只登记真正含题的板块。
+        # 此前无条件登记，会在专题模式里生成 0 题的空白板块——用户点进去无题可做，
+        # 且板块计数虚高（如「32 个板块」实际只有 29 个有题）。
+        if questions:
+            section_map[section_name] = list(range(start_idx, len(all_questions)))
+        elif file_blocks == 0:
+            print(f"  ⏭️  跳过（无题块，不计入板块）")
         print(f"  → {len(questions)} 题（累计 {len(all_questions)} 题）")
 
     # 对账
