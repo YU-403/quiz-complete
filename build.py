@@ -3117,7 +3117,8 @@ def balance_answer_positions(questions):
             continue
         movable.append(q)
 
-    if not movable:
+    # 可重排题目少于 4 道时无法均分到四个选项上，重排无意义，直接跳过
+    if len(movable) < 4:
         return 0, skipped, []
 
     n = len(movable)
@@ -3220,9 +3221,11 @@ def quality_audit(questions):
     # ---- 2. 单选题答案位置分布 ----
     # 大模型出题有把正确答案放在 B/C 的倾向。若分布过度集中，
     # 不会的学生一律押注高频选项即可获得可观正确率，且低频选项近乎可无条件排除。
+    # 题数少于 4 道时无法分布到四个选项上（如仅 1 道题时必然 100%），
+    # 此时检查无意义，跳过以免产生无效告警。
     singles = [q for q in questions
                if q['type'] == 'single' and len(re.findall(r'[A-E]', q['answer'])) == 1]
-    if singles:
+    if len(singles) >= 4:
         pos = collections.Counter(re.findall(r'[A-E]', q['answer'])[0] for q in singles)
         n = len(singles)
         stats['single_total'] = n
