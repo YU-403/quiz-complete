@@ -1,0 +1,37 @@
+# 行尾符与二进制文件规范
+#
+# 目的：让仓库内的文本文件统一以 LF 存储，避免跨平台协作时
+# 因行尾符差异产生无意义的全文件 diff。
+# （Windows 上 checkout 后仍会按本地习惯转换，不影响使用。）
+
+# 默认：自动识别文本文件，仓库内统一存 LF
+* text=auto eol=lf
+
+# 明确指定文本类型（避免自动识别失误）
+*.py    text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.css   text eol=lf
+*.js    text eol=lf
+*.html  text eol=lf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# 二进制文件：不做任何行尾转换
+*.woff2  binary
+*.woff   binary
+*.ttf    binary
+*.otf    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.zip    binary
+*.pdf    binary
+
+# 语言统计：把 KaTeX 资源标记为 vendored，避免污染主语言占比
+assets/katex/*  linguist-vendored
