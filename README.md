@@ -151,20 +151,31 @@ D. 句子
 
 本 Skill 以**源码树**形式维护，压缩包是它的分发形态，**两者内容完全一致**。
 
-### 方式一：从源码安装（推荐）
+### 方式一：下载压缩包（推荐，无需 Python）
 
-把本项目目录整个复制到客户端的 Skill 目录即可：
+前往 [**Releases**](../../releases) 页面下载最新版 `quiz-complete.zip`，
+解压后把 `quiz-complete/` 整个目录放入客户端的 Skill 目录：
 
 | 客户端 | Skill 目录 |
 |:-------|:-----------|
 | Cherry Studio | `…/CherryStudio/Data/Skills/quiz-complete/` |
 | Claude Code | `~/.claude/skills/quiz-complete/` |
 
-> ⚠️ 目录名须为 **`quiz-complete`**（与 `SKILL.md` 中 frontmatter 的 `name` 一致），
+> ⚠️ **目录名须为 `quiz-complete`**（与 `SKILL.md` 中 frontmatter 的 `name` 一致），
 > 否则客户端无法识别此 Skill。
-> 另须**连 `assets/` 目录一起复制**，否则 `--katex` 公式渲染会静默失效。
+> 也不要把目录里的文件摊开平铺——必须是 `quiz-complete/` 这一层目录本身。
 
-### 方式二：生成压缩包分发
+### 方式二：从源码安装
+
+```bash
+git clone https://github.com/YU-403/quiz-complete.git
+```
+
+把克隆下来的目录改名为 `quiz-complete`（若不同名），放入上述 Skill 目录即可。
+
+> ⚠️ 须**连 `assets/` 目录一起**，否则 `--katex` 公式渲染会静默失效。
+
+### 方式三：自行打包分发
 
 需要把 Skill 发给他人时，用自带的打包脚本现场生成：
 
