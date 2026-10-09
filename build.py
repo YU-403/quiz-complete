@@ -430,6 +430,18 @@ body {
 
 /* --- 板块选择页 --- */
 .section-list { display: grid; gap: 12px; margin: 20px 0; }
+/* 一级目录（板块）折叠：题库文件用 **板塊** 声明分组时启用 */
+.nav-group { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); overflow: hidden; }
+.nav-group-head {
+  display: flex; align-items: center; gap: 10px; padding: 16px 20px; cursor: pointer;
+  transition: background 0.25s ease;
+}
+.nav-group-head:hover { background: var(--bg-card-hover); }
+.nav-chevron { font-size: 12px; color: var(--accent); width: 12px; }
+.nav-group-name { font-size: 18px; font-weight: 700; color: var(--accent-dark); }
+.nav-group-count { margin-left: auto; font-size: 13px; color: var(--text-light); font-family: __SANS_FAMILY__; }
+.nav-group-body { display: none; padding: 0 14px 14px; }
+.nav-group.open .nav-group-body { display: grid; gap: 8px; }
 .section-item {
   background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 10px;
   padding: 18px 20px; cursor: pointer; transition: all 0.3s ease;
@@ -1145,6 +1157,7 @@ __KATEX_JS__
   const ENABLED_MODES = '__ENABLED_MODES__';
 const allQuestions = __QUESTIONS_JSON__;
 const sectionMap = __SECTIONS_JSON__;
+const sectionTree = __SECTION_TREE_JSON__;
 const allTags = __TAGS_JSON__;
 // 判断题术语按题库语体显示（构建时注入）；判分与存储一律用简体值
 const JUDGE_TRUE_LABEL = '__JUDGE_TRUE__';
@@ -1513,13 +1526,51 @@ const JUDGE_FALSE_LABEL = '__JUDGE_FALSE__';
   function renderSections() {
     var list = document.getElementById('sectionList');
     list.innerHTML = '';
-    Object.keys(sectionMap).sort(function(a, b) { return a.localeCompare(b, 'zh-CN'); }).forEach(function(section) {
-      var indices = sectionMap[section];
+    var tree = (typeof sectionTree !== 'undefined' && sectionTree) ? sectionTree : [];
+    // 多于一个板块时渲染两级目录；否则退回原来的平铺列表（旧题库行为不变）
+    var groups = (tree.length > 1)
+      ? tree
+      : [{ g: '', s: tree.length === 1
+          ? tree[0].s
+          : Object.keys(sectionMap).sort(function(a, b) { return a.localeCompare(b, 'zh-CN'); }) }];
+
+    function makeItem(section, cls) {
+      var indices = sectionMap[section] || [];
       var item = document.createElement('div');
-      item.className = 'section-item';
+      item.className = cls;
       item.innerHTML = '<span class="sec-name">' + esc(section) + '</span><span class="sec-count">共 ' + indices.length + ' 题</span>';
-      item.onclick = function() { playClick(); currentSection = section; startQuiz('topic', section); };
-      list.appendChild(item);
+      item.onclick = function(ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        playClick(); currentSection = section; startQuiz('topic', section);
+      };
+      return item;
+    }
+
+    groups.forEach(function(node) {
+      if (!node.g) {
+        node.s.forEach(function(section) { list.appendChild(makeItem(section, 'section-item')); });
+        return;
+      }
+      var wrap = document.createElement('div');
+      wrap.className = 'nav-group';
+      var total = 0;
+      node.s.forEach(function(sec) { total += (sectionMap[sec] || []).length; });
+      var head = document.createElement('div');
+      head.className = 'nav-group-head';
+      head.innerHTML = '<span class="nav-chevron">▸</span>'
+        + '<span class="nav-group-name">' + esc(node.g) + '</span>'
+        + '<span class="nav-group-count">' + node.s.length + ' 章 · 共 ' + total + ' 题</span>';
+      var body = document.createElement('div');
+      body.className = 'nav-group-body';
+      node.s.forEach(function(sec) { body.appendChild(makeItem(sec, 'section-item nav-child')); });
+      head.onclick = function() {
+        playClick();
+        var open = wrap.classList.toggle('open');
+        head.querySelector('.nav-chevron').textContent = open ? '▾' : '▸';
+      };
+      wrap.appendChild(head);
+      wrap.appendChild(body);
+      list.appendChild(wrap);
     });
   }
 
@@ -3307,6 +3358,17 @@ def parse_file(filepath):
         content = f.read()
     section_m = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
     section_name = section_m.group(1).strip() if section_m else filename
+    # 可选导航元数据（写在 H1 之后、首个 ## 之前）：
+    #   **板塊**：常用詞  —— 专题模式的一级目录名（不写则回退为所在目录名）
+    #   **順序**：3       —— 同一板块内的排序号（不写则排在显式编号之后）
+    # 两者都不写时，行为与本特性加入前完全一致（平铺列表、拼音排序）。
+    head = re.split(r'(?m)^##\s', content, maxsplit=1)[0]
+    g_m = re.search(r'(?m)^\*\*板塊\*\*\s*[:：]\s*(.+?)\s*$', head)
+    o_m = re.search(r'(?m)^\*\*順序\*\*\s*[:：]\s*(\d+)\s*$', head)
+    nav_meta = {
+        'group': g_m.group(1).strip() if g_m else '',
+        'order': int(o_m.group(1)) if o_m else None,
+    }
     # 按「### 第 N 題」切分，而不是按 --- 分隔线：
     # 旧题库里存在连续排列、题与题之间没有 --- 的段落，按分隔线切会整段丢失；
     # 按题号切分同时兼容标准写法（--- 会落在上一题块尾，不影响解析）
@@ -3335,7 +3397,7 @@ def parse_file(filepath):
                 'answer': (ans_m.group(1).strip()[:20] if ans_m else '（未找到答案行）'),
                 'head': re.sub(r'\s+', ' ', block[:48]),
             })
-    return section_name, questions, failed
+    return section_name, questions, failed, nav_meta
 
 
 # ============================================================
@@ -3382,6 +3444,7 @@ def main():
     total_parsed = 0
     failed_all = []
     section_map = {}
+    nav_records = []
     all_text_for_variant = []
 
     for fp in md_files:
@@ -3398,7 +3461,7 @@ def main():
         # 进而让界面语体与题库不一致。排除它们可保证判定只反映题目本身。
         if file_blocks:
             all_text_for_variant.append(raw_content)
-        section_name, questions, failed = parse_file(fp)
+        section_name, questions, failed, nav_meta = parse_file(fp)
         total_parsed += len(questions)
         if failed:
             failed_all.append((fname, failed))
@@ -3415,9 +3478,41 @@ def main():
         # 且板块计数虚高（如「32 个板块」实际只有 29 个有题）。
         if questions:
             section_map[section_name] = list(range(start_idx, len(all_questions)))
+            rel = os.path.relpath(os.path.dirname(fp), args.input)
+            top = '' if rel == '.' else rel.split(os.sep)[0]
+            nav_records.append({
+                'section': section_name,
+                'declared': nav_meta['group'],
+                'group': nav_meta['group'] or top,
+                'order': nav_meta['order'],
+                'seq': len(nav_records),
+            })
         elif file_blocks == 0:
             print(f"  ⏭️  跳过（无题块，不计入板块）")
         print(f"  → {len(questions)} 题（累计 {len(all_questions)} 题）")
+
+    # ---- 专题模式的一级目录：按 **板塊** 分组，组内按 **順序** 排序 ----
+    # 板块顺序 = 首次出现的顺序（文件按路径排序遍历，因此与目录名一致）
+    section_tree = []
+    # 严格 opt-in：至少要有一个文件声明 **板塊** 才启用两级目录，
+    # 否则多目录题库也会被改名分组，破坏「不声明即行为不变」的承诺
+    if any(r['declared'] for r in nav_records):
+        buckets, order_seen = {}, []
+        for r in nav_records:
+            g = r['group'] or '未分組'
+            if g not in buckets:
+                buckets[g] = []
+                order_seen.append(g)
+            buckets[g].append(r)
+        for g in order_seen:
+            rows = sorted(buckets[g],
+                          key=lambda r: (r['order'] if r['order'] is not None else 10 ** 6, r['seq']))
+            section_tree.append({'g': g, 's': [r['section'] for r in rows]})
+        # section_map 的键顺序一并对齐导航树，知识点专项的章节顺序随之归位
+        reranged = {s: section_map[s] for node in section_tree for s in node['s']}
+        if len(reranged) == len(section_map):
+            section_map = reranged
+        print(f"\n🧭 两级目录: {len(section_tree)} 个板块 / {len(section_map)} 章")
 
     # 对账
     print(f"\n{'=' * 50}")
@@ -3509,6 +3604,7 @@ def main():
     html = html.replace('__ENABLED_MODES__', args.modes)
     html = html.replace('__QUESTIONS_JSON__', json_for_script(all_questions))
     html = html.replace('__SECTIONS_JSON__', json_for_script(section_map))
+    html = html.replace('__SECTION_TREE_JSON__', json_for_script(section_tree))
     html = html.replace('__TAGS_JSON__', json_for_script(all_tags))
 
     # 判断题术语按题库语体注入（繁体题库显示「正確 / 錯誤」，简体题库显示「正确 / 错误」）
