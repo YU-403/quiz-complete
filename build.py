@@ -19,6 +19,9 @@ v2.13 变更:
   - 答案均衡扩展到不定项：按正确项数量分层均衡具体组合
   - 新增正确项数量、组合集中度、字母覆盖与选项重复审计
   - 新增 --strict-audit：发布构建质量不达标时返回非零退出码
+
+v2.13.1 变更:
+  - 单选与单项正确多选分别均衡，不再互相占用 A/B/C/D 配额
 """
 
 import os
@@ -3225,17 +3228,21 @@ def balance_answer_positions(questions):
         if any(_FIXED_OPTION.search(_strip_option_prefix(o)) for o in q['options']):
             skipped.append(q)
             continue
-        groups[len(ans)].append(q)
+        # 单选与多选必须分开均衡：两者即使都只有一个正确答案，
+        # 也不应互相占用 A/B/C/D 的配额。
+        groups[(q['type'], len(ans))].append(q)
 
     moved = 0
     moved_by_type = collections.Counter()
     moved_questions = []
-    for cardinality in sorted(groups):
-        group = groups[cardinality]
+    for qtype, cardinality in sorted(groups):
+        group = groups[(qtype, cardinality)]
         combos = [''.join(c) for c in itertools.combinations(letters, cardinality)]
 
         # 旋转起始组合，避免低样本组永远从 ABC 开始。
-        seed = hashlib.sha256(('quiz-complete-v2.13-%d' % cardinality).encode()).hexdigest()
+        seed = hashlib.sha256(
+            ('quiz-complete-v2.13.1-%s-%d' % (qtype, cardinality)).encode()
+        ).hexdigest()
         start = int(seed[:8], 16) % len(combos)
         ordered_combos = combos[start:] + combos[:start]
 
@@ -3247,7 +3254,7 @@ def balance_answer_positions(questions):
         hashed_group = sorted(
             group,
             key=lambda q: hashlib.sha256(
-                ('%s|v2.13|%d' % (q['id'], cardinality)).encode()
+                ('%s|v2.13.1|%s|%d' % (q['id'], qtype, cardinality)).encode()
             ).hexdigest()
         )
         target_for = {id(q): pattern for q, pattern in zip(hashed_group, target_patterns)}

@@ -109,6 +109,24 @@ class AnswerDistributionTests(unittest.TestCase):
         for question in questions:
             self.assertEqual(correct_bodies(question), expected[question['id']])
 
+    def test_single_and_one_answer_multiple_are_balanced_separately(self):
+        singles = [
+            make_question('mixed-single-%d' % i, 'single', 1, file='single')
+            for i in range(23)
+        ]
+        multis = [
+            make_question('mixed-multi-one-%d' % i, 'multiple', 1, file='multi-one')
+            for i in range(5)
+        ]
+        questions = singles + multis
+
+        BUILD.balance_answer_positions(questions)
+
+        single_counts = BUILD.collections.Counter(q['answer'] for q in singles)
+        multi_counts = BUILD.collections.Counter(q['answer'] for q in multis)
+        self.assertEqual(sorted(single_counts.values()), [5, 6, 6, 6])
+        self.assertEqual(sorted(multi_counts.values()), [1, 1, 1, 2])
+
     def test_multi_three_and_two_answer_patterns_balanced(self):
         questions = []
         for idx in range(56):
