@@ -14,6 +14,11 @@ v2.2 变更:
   - 递归搜索 .md: 子目录中的题集文件也能被识别
   - 板块列表排序: 用 localeCompare 按中文语义排序，不再乱序
   - 知识点取消回首页: 取消按钮同时返回首页并清除选中状态
+
+v2.13 变更:
+  - 答案均衡扩展到不定项：按正确项数量分层均衡具体组合
+  - 新增正确项数量、组合集中度、字母覆盖与选项重复审计
+  - 新增 --strict-audit：发布构建质量不达标时返回非零退出码
 """
 
 import os
@@ -3029,6 +3034,19 @@ def parse_question_block(text, filename):
         return None
     qid = int(num_m.group(1))
     has_options = bool(re.search(r'\n[A-E][.、）)\s]', text))
+    declared_m = re.search(
+        r'###\s*第\s*\d+\s*[题題]\s*[（(]([^)）]*)[)）]',
+        text,
+    )
+    declared_type = ''
+    if declared_m:
+        label = declared_m.group(1)
+        if '不定' in label or '不定項' in label:
+            declared_type = 'multiple'
+        elif '判断' in label or '判斷' in label:
+            declared_type = 'judge'
+        elif '单选' in label or '單選' in label:
+            declared_type = 'single'
 
     if has_options:
         q_text_m = re.search(
@@ -3046,7 +3064,8 @@ def parse_question_block(text, filename):
         if ans_m:
             ans_raw = ans_m.group(1).strip()
             multi_m = re.findall(r'[A-E]', ans_raw)
-            if len(multi_m) >= 2 or '全選' in ans_raw or '全选' in ans_raw:
+            if (declared_type == 'multiple' or len(multi_m) >= 2
+                    or '全選' in ans_raw or '全选' in ans_raw):
                 # 不定项选择
                 answer = ' · '.join(multi_m)
                 qtype = "multiple"
@@ -3098,12 +3117,24 @@ AUDIT_THRESHOLDS = {
     # 不定项全选率上限（%）。全选题不给学生任何区分信息，一律全选即可得分，
     # 故从严限制：每 10 道不定项中最多 1 道允许四项全对。
     'multi_full_max_pct': 10,
+    # 不定项具体答案组合最高占比（%）。样本太小时比例波动大，不强行判断。
+    'multi_pattern_min_sample': 20,
+    'multi_pattern_max_pct': 30,
+    # 正确项数量结构与目标值的允许偏差（百分点）。
+    'multi_cardinality_tolerance_pct': 10,
+    # 重复选项：过短文本（如“正确”“不是”）不参与相似度审计。
+    'option_duplicate_min_len': 4,
+    'option_similarity_min_len': 8,
+    'option_similarity_threshold': 0.90,
     # 选项长度极差上限（字）。
     # 实测：极差 ≥8 字时约 95% 的题答案是那个最长选项，<8 字时降至 46%（接近随机）。
     # 此处刻意取 6 字这一更严的标准——出题时从严要求，为实际执行留出余量；
     # 若取实测拐点 8 字，标准一旦贴近底线，执行容易继续下滑。
     'opt_len_gap_max': 6,
 }
+
+# 不定项正确项数量目标（%）。生成阶段负责达到该结构，构建阶段只审计。
+MULTI_CARDINALITY_TARGET_PCT = {1: 20, 2: 35, 3: 35, 4: 10}
 
 
 # 位置敏感的选项：这类选项必须固定在末位，旋转会破坏其语义，故跳过硬性重排
@@ -3115,31 +3146,56 @@ def _strip_option_prefix(text):
     return re.sub(r'^\s*[A-E]\s*[.、）)]?\s*', '', text).strip()
 
 
+def _answer_letters(question):
+    """返回答案中的选项字母，去重并按 A-D 排序。"""
+    return sorted(set(re.findall(r'[A-E]', question.get('answer') or '')))
+
+
+def _single_position_counts(questions):
+    return collections.Counter(
+        q['answer'].strip()[0] if q.get('answer') else ''
+        for q in questions
+        if q.get('type') == 'single' and len(_answer_letters(q)) == 1
+    )
+
+
+def _multi_pattern_counts(questions):
+    result = collections.Counter()
+    for q in questions:
+        if q.get('type') != 'multiple':
+            continue
+        letters = _answer_letters(q)
+        if 1 <= len(letters) <= 4:
+            result[' · '.join(letters)] += 1
+    return result
+
+
 def balance_answer_positions(questions):
-    """构建期重排选项顺序，使正确答案在 A/B/C/D 上均匀分布。
+    """构建期重排选项顺序，均衡单选位置与不定项答案组合。
 
     【问题】
-    大模型出题存在系统性的位置偏好——倾向于把正确答案放在中间位置。
-    实测某 1122 题题库的 383 道单选：A 1.3% / B 48.0% / C 44.6% / D 6.0%。
-    后果有二：完全不会的学生一律押注 B 或 C 即可获得约 46% 的正确率；
-    A、D 近乎可无条件排除——题目失去区分度，退化为「复习提纲」而非「自测工具」。
+    大模型出题存在系统性的位置与结构偏好：
+    - 单选题倾向把正确答案放在 B/C；
+    - 不定项题倾向连续选择前几项，例如几乎全是 A·B·C。
+    后者会让“只选前三项”成为稳定猜题策略，即使没有出现 ABCD 全选。
 
     【原理】
-    选项的**顺序**对题目语义没有约束（题干问的是「下列哪一项」，不指向位置）。
-    因此可以在构建时机械地**循环旋转**选项，把正确答案搬到分布偏少的字母上——
-    整个过程无需理解题目内容，纯位置变换：
+    选项的**顺序**对题目语义没有约束，可以机械置换：
 
-        ABCD → BCDA      答案字母由 A 变为 D（随内容一起移动）
+    - 单选按 A/B/C/D 位置均衡；
+    - 不定项先按正确项数量 1/2/3/4 分层，再在同层内均衡具体组合。
+
+    例如三项正确共有 ABC / ABD / ACD / BCD 四种组合，应尽量均分。
+    重排只移动完整选项正文，答案由目标位置重新计算：
+
+        ABC → ACD        原正确项移动到 A/C/D
 
     仅一类例外必须排除：含「以上都对」「上述各项」等**指代位置**的选项，
     它们天然要求固定末位，旋转会破坏语义。本函数会跳过这类题。
 
-    【算法】
-      1. 统计当前各字母数量，算出每个字母的目标数量（均分，余数分给靠前的字母）
-      2. 超出目标的字母为「超额」，不足的为「缺口」（二者总量必然相等）
-      3. 从超额字母的题目中确定性地挑出待移动的题（按题目 ID 哈希排序，
-         保证同一题库每次构建得到完全相同的挑选结果）
-      4. 把缺口字母序列与待移动题目配对，逐题旋转到目标位置
+    【重要边界】
+      本函数只能改变选项顺序，不能改变一道题有“几个”正确项。
+      1/2/3/4 正确项的结构必须由命题阶段生成，再由质量审计检查。
 
     【稳定性保证】
       - **结果可复现**：选择依据是题目 ID 的哈希，不含随机数，重复构建结果一致
@@ -3151,89 +3207,209 @@ def balance_answer_positions(questions):
     【可关闭】
       --no-balance 跳过本步骤，保持题库原始顺序。
 
-    返回 (重排题数, 跳过的题列表, 引用字母的题列表)。
+    返回 (重排题数, 分类重排计数, 跳过的题列表, 引用字母的题列表)。
     """
-    import collections
+    import itertools
 
     letters = 'ABCD'
-    movable, skipped = [], []
+    groups = collections.defaultdict(list)
+    skipped = []
     for q in questions:
-        if q['type'] != 'single' or len(q['options']) != 4:
+        if q.get('type') not in ('single', 'multiple') or len(q.get('options') or []) != 4:
             continue
-        ans = re.findall(r'[A-E]', q['answer'])
-        if len(ans) != 1 or ans[0] not in letters:
+        ans = _answer_letters(q)
+        if not ans or len(ans) > 4:
+            continue
+        if q['type'] == 'single' and len(ans) != 1:
             continue
         if any(_FIXED_OPTION.search(_strip_option_prefix(o)) for o in q['options']):
             skipped.append(q)
             continue
-        movable.append(q)
-
-    # 可重排题目少于 4 道时无法均分到四个选项上，重排无意义，直接跳过
-    if len(movable) < 4:
-        return 0, skipped, []
-
-    n = len(movable)
-    base, rem = divmod(n, 4)
-    target = {letters[i]: base + (1 if i < rem else 0) for i in range(4)}
-
-    counts = collections.Counter(re.findall(r'[A-E]', q['answer'])[0] for q in movable)
-    excess = {L: counts[L] - target[L] for L in letters if counts[L] > target[L]}
-    deficit = {L: target[L] - counts[L] for L in letters if target[L] > counts[L]}
-
-    # 缺口字母序列，交错排列（A B C D A B C D…），避免同类集中
-    need = []
-    while any(v > 0 for v in deficit.values()):
-        for L in letters:
-            if deficit.get(L, 0) > 0:
-                need.append(L)
-                deficit[L] -= 1
-    if not need:
-        return 0, skipped, []
-
-    # 待移动的题：只从「超额字母」里取，数量恰好等于超额数
-    pool = []
-    for L in letters:
-        if excess.get(L, 0) > 0:
-            same = [q for q in movable if re.findall(r'[A-E]', q['answer'])[0] == L]
-            same.sort(key=lambda q: hashlib.md5(q['id'].encode()).hexdigest())
-            pool.extend(same[:excess[L]])
-    pool.sort(key=lambda q: hashlib.md5(q['id'].encode()).hexdigest())
+        groups[len(ans)].append(q)
 
     moved = 0
-    for q, dest in zip(pool, need):
-        cur = re.findall(r'[A-E]', q['answer'])[0]
-        k = (letters.index(dest) - letters.index(cur)) % 4
-        if k == 0:
-            continue
-        old = [_strip_option_prefix(o) for o in q['options']]
-        # 循环右移 k 位：新位置 i 取自旧位置 (i-k)
-        q['options'] = ['%s. %s' % (letters[i], old[(i - k) % 4]) for i in range(4)]
-        q['answer'] = dest
-        moved += 1
+    moved_by_type = collections.Counter()
+    moved_questions = []
+    for cardinality in sorted(groups):
+        group = groups[cardinality]
+        combos = [''.join(c) for c in itertools.combinations(letters, cardinality)]
+
+        # 旋转起始组合，避免低样本组永远从 ABC 开始。
+        seed = hashlib.sha256(('quiz-complete-v2.13-%d' % cardinality).encode()).hexdigest()
+        start = int(seed[:8], 16) % len(combos)
+        ordered_combos = combos[start:] + combos[:start]
+
+        base, rem = divmod(len(group), len(combos))
+        target_patterns = []
+        for idx, combo in enumerate(ordered_combos):
+            target_patterns.extend([combo] * (base + (1 if idx < rem else 0)))
+
+        hashed_group = sorted(
+            group,
+            key=lambda q: hashlib.sha256(
+                ('%s|v2.13|%d' % (q['id'], cardinality)).encode()
+            ).hexdigest()
+        )
+        target_for = {id(q): pattern for q, pattern in zip(hashed_group, target_patterns)}
+
+        for q in group:
+            current = ''.join(_answer_letters(q))
+            target = target_for[id(q)]
+            if current == target:
+                continue
+
+            correct_pool = [
+                _strip_option_prefix(opt)
+                for idx, opt in enumerate(q['options']) if letters[idx] in current
+            ]
+            wrong_pool = [
+                _strip_option_prefix(opt)
+                for idx, opt in enumerate(q['options']) if letters[idx] not in current
+            ]
+            target_set = set(target)
+            ci = wi = 0
+            new_options = []
+            for pos in letters:
+                if pos in target_set:
+                    body = correct_pool[ci]
+                    ci += 1
+                else:
+                    body = wrong_pool[wi]
+                    wi += 1
+                new_options.append('%s. %s' % (pos, body))
+
+            q['options'] = new_options
+            q['answer'] = ' · '.join(target)
+            moved += 1
+            moved_by_type[q['type']] += 1
+            moved_questions.append(q)
 
     # 解析中显式引用了选项字母的题（旋转后会失准），列出供人工核对
     ref = re.compile(r'(?<![A-Za-z])[A-D]\s*[项項]')
-    letter_refs = [q for q in movable if ref.search(q.get('explanation') or '')]
+    letter_refs = [q for q in moved_questions if ref.search(q.get('explanation') or '')]
 
-    return moved, skipped, letter_refs
+    return moved, moved_by_type, skipped, letter_refs
 
 
-def print_balance_report(moved, skipped, letter_refs, before, after):
+def _counter_summary(counter, limit=6):
+    items = counter.most_common(limit)
+    return ' / '.join('%s %d' % (name, count) for name, count in items) or '无'
+
+
+def print_balance_report(moved, moved_by_type, skipped, letter_refs,
+                         single_before, single_after, multi_before, multi_after):
     """打印答案位置均衡的处理报告。"""
-    if moved == 0 and not skipped:
+    if moved == 0 and not skipped and multi_before == multi_after:
         return
     print(f"\n⚖️  答案位置均衡")
-    if before and after:
-        b = ' / '.join('%s%d' % (k, before[k]) for k in 'ABCD')
-        a = ' / '.join('%s%d' % (k, after[k]) for k in 'ABCD')
-        print(f"  {b}  →  {a}")
-    print(f"  已重排 {moved} 道单选（选项顺序循环移位，答案随之移动）")
+    if single_before and single_after:
+        b = ' / '.join('%s%d' % (k, single_before[k]) for k in 'ABCD')
+        a = ' / '.join('%s%d' % (k, single_after[k]) for k in 'ABCD')
+        print(f"  单选 {b}  →  {a}")
+    if multi_before or multi_after:
+        print(f"  不定项前: {_counter_summary(multi_before)}")
+        print(f"  不定项后: {_counter_summary(multi_after)}")
+    print(f"  已重排 {moved} 道：单选 {moved_by_type.get('single', 0)} / "
+          f"不定项 {moved_by_type.get('multiple', 0)}")
     if skipped:
         print(f"  跳过 {len(skipped)} 道（含「以上都对」等位置敏感选项）")
     if letter_refs:
         print(f"  ⚠️  {len(letter_refs)} 道题的解析引用了选项字母，重排后可能失准，建议核对：")
         for q in letter_refs[:5]:
             print(f"     · {q['question'][:38]}")
+
+
+def _normalize_option_for_audit(text):
+    """规范化选项正文，用于检测完全重复与高度相似。"""
+    import unicodedata
+    body = _strip_option_prefix(text)
+    body = body.replace('**', '')
+    body = unicodedata.normalize('NFKC', body).lower()
+    return re.sub(r'\s+', '', body)
+
+
+def _option_similarity_audit(questions):
+    """返回 (完全重复组数, 重复选项数, 高相似对数, 示例列表)。"""
+    import difflib
+
+    T = AUDIT_THRESHOLDS
+    by_file = collections.defaultdict(list)
+    exact = collections.defaultdict(list)
+    letters = 'ABCD'
+
+    for q in questions:
+        options = q.get('options') or []
+        group = q.get('file') or q.get('section') or ''
+        for idx, raw in enumerate(options[:4]):
+            norm = _normalize_option_for_audit(raw)
+            if not norm:
+                continue
+            rec = {
+                'norm': norm,
+                'raw': _strip_option_prefix(raw),
+                'label': letters[idx] if idx < len(letters) else '?',
+                'qid': q.get('id', ''),
+                'question': q.get('question', ''),
+                'file': group,
+            }
+            by_file[group].append(rec)
+            if len(norm) >= T['option_duplicate_min_len']:
+                exact[norm].append(rec)
+
+    duplicate_groups = [rows for rows in exact.values() if len(rows) > 1]
+    duplicate_count = sum(len(rows) for rows in duplicate_groups)
+    examples = []
+    for rows in sorted(duplicate_groups, key=lambda x: (-len(x), x[0]['norm']))[:5]:
+        examples.append((rows[0]['qid'], rows[1]['qid'],
+                         rows[0]['label'], rows[1]['label'], rows[0]['raw']))
+
+    # 高相似候选：按同文件、字符三元组倒排，避免全库 O(n²) 扫描。
+    candidate_pairs = set()
+    for _group, group_rows in by_file.items():
+        shingle_map = collections.defaultdict(list)
+        shingles_for = []
+        for idx, rec in enumerate(group_rows):
+            text = rec['norm']
+            if len(text) < T['option_similarity_min_len']:
+                shingles = []
+            else:
+                shingles = sorted(set(text[i:i + 3] for i in range(len(text) - 2)))
+            shingles_for.append(shingles)
+            for sh in shingles:
+                shingle_map[sh].append(idx)
+
+        # 每个选项只进入少量稀有 shingle 桶，控制超长题库的候选数量。
+        freq = {sh: len(indices) for sh, indices in shingle_map.items()}
+        for idx, shingles in enumerate(shingles_for):
+            if not shingles:
+                continue
+            selected = sorted(shingles, key=lambda sh: (freq[sh], sh))[:4]
+            for sh in selected:
+                bucket = shingle_map[sh]
+                if len(bucket) > 120:
+                    continue
+                for other in bucket:
+                    if other != idx:
+                        pair = (idx, other) if idx < other else (other, idx)
+                        candidate_pairs.add((_group, pair[0], pair[1]))
+
+    similar_pairs = []
+    for _group, i, j in candidate_pairs:
+        group_rows = by_file[_group]
+        a, b = group_rows[i], group_rows[j]
+        if a['qid'] == b['qid']:
+            continue
+        if a['norm'] == b['norm']:
+            continue
+        max_len = max(len(a['norm']), len(b['norm']))
+        if max_len == 0 or abs(len(a['norm']) - len(b['norm'])) / max_len > 0.25:
+            continue
+        ratio = difflib.SequenceMatcher(None, a['norm'], b['norm'], autojunk=False).ratio()
+        if ratio >= T['option_similarity_threshold']:
+            similar_pairs.append((ratio, a, b))
+    similar_pairs.sort(key=lambda x: (-x[0], x[1]['qid'], x[2]['qid']))
+
+    return len(duplicate_groups), duplicate_count, len(similar_pairs), examples, similar_pairs
 
 
 def quality_audit(questions):
@@ -3245,7 +3421,8 @@ def quality_audit(questions):
     本函数把规范变成构建时的**可观测指标**，使偏离立刻可见。
 
     【设计原则】
-    - 只告警、不中断：质量指标是「提示」而非「阻断」，避免因阈值争议妨碍正常构建
+    - 默认只告警、不中断：避免因阈值争议妨碍正常构建
+    - `--strict-audit` 可把告警升级为构建失败，供发布流程使用
     - 阈值集中定义在 AUDIT_THRESHOLDS，便于统一调整
     - 指标口径与 SKILL.md 命题规范一一对应，两边同时改
 
@@ -3290,13 +3467,14 @@ def quality_audit(questions):
             warns.append('答案位置偏斜：%s，最高项占 %.0f%%（上限 %d%%）——押注单一选项即可得分'
                          % (detail, top_pct, T['single_pos_max_pct']))
 
-    # ---- 3. 不定项全选率 ----
-    # 「全选」题不给学生任何区分信息：一律全选即可得分。
-    # 全选率过高时，不定项选择题退化为送分题，失去考查作用。
+    # ---- 3. 不定项答案结构 ----
+    # 除了全选率，还要检查正确项数量、具体组合和字母覆盖。
     multis = [q for q in questions if q['type'] == 'multiple']
     if multis:
-        full = sum(1 for q in multis
-                   if len(re.findall(r'[A-E]', q['answer'])) >= 4)
+        multi_answers = [(q, _answer_letters(q)) for q in multis]
+        valid_multi_answers = [(q, ans) for q, ans in multi_answers if 1 <= len(ans) <= 4]
+        full = sum(1 for _q, ans in valid_multi_answers if len(ans) == 4)
+        n = len(valid_multi_answers)
         pct = 100.0 * full / len(multis)
         stats['multi_total'] = len(multis)
         stats['multi_full'] = full
@@ -3304,6 +3482,54 @@ def quality_audit(questions):
         if pct > T['multi_full_max_pct']:
             warns.append('不定项全选率 %.0f%%（%d/%d，上限 %d%%）——一律全选即可得分'
                          % (pct, full, len(multis), T['multi_full_max_pct']))
+
+        cardinality = collections.Counter(len(ans) for _q, ans in valid_multi_answers)
+        patterns = collections.Counter(' · '.join(ans) for _q, ans in valid_multi_answers)
+        correct_letters = collections.Counter(
+            letter for _q, ans in valid_multi_answers for letter in ans
+        )
+        stats['multi_cardinality'] = {k: cardinality.get(k, 0) for k in (1, 2, 3, 4)}
+        stats['multi_patterns'] = dict(patterns)
+        stats['multi_letter_correct'] = {k: correct_letters.get(k, 0) for k in 'ABCD'}
+        if patterns:
+            top_pattern, top_count = patterns.most_common(1)[0]
+            stats['multi_top_pattern'] = top_pattern
+            stats['multi_top_pattern_pct'] = 100.0 * top_count / n
+
+        if n >= T['multi_pattern_min_sample']:
+            top_pattern_pct = stats['multi_top_pattern_pct']
+            if top_pattern_pct > T['multi_pattern_max_pct']:
+                warns.append(
+                    '不定项具体组合集中：%s 占 %.0f%%（%d/%d，上限 %d%%）'
+                    % (top_pattern, top_pattern_pct, top_count, n,
+                       T['multi_pattern_max_pct'])
+                )
+
+            missing_letters = [L for L in 'ABCD' if correct_letters.get(L, 0) == 0]
+            if missing_letters:
+                warns.append(
+                    '不定项正确项字母覆盖缺失：%s 从未作为答案——固定猜前几项即可获益'
+                    % ' / '.join(missing_letters)
+                )
+
+            cardinality_pct = {
+                k: 100.0 * cardinality.get(k, 0) / n for k in (1, 2, 3, 4)
+            }
+            card_issues = []
+            for k, target in MULTI_CARDINALITY_TARGET_PCT.items():
+                actual = cardinality_pct[k]
+                if cardinality.get(k, 0) == 0 or abs(actual - target) > T['multi_cardinality_tolerance_pct']:
+                    card_issues.append('%d项 %.0f%%（目标 %d%%）' % (k, actual, target))
+            if card_issues:
+                warns.append(
+                    '不定项正确项数量结构偏离：%s——正确项数量必须由命题阶段调整，重排不能改变'
+                    % '；'.join(card_issues)
+                )
+        elif n >= 5 and len(cardinality) < 2:
+            warns.append(
+                '不定项正确项数量单一：%d 道全部是 %d 项——小样本也应至少包含两种数量'
+                % (n, next(iter(cardinality)) if cardinality else 0)
+            )
 
     # ---- 4. 选项长度极差 ----
     # 正确答案若显著长于干扰项，长度本身就成了提示（实测极差≥8 字时约 95% 是答案）。
@@ -3323,6 +3549,28 @@ def quality_audit(questions):
         warns.append('选项长度极差超过 %d 字的有 %d 道（最大 %d 字）——长度可能泄露答案'
                      % (T['opt_len_gap_max'], len(longs), worst[1]))
 
+    # ---- 5. 选项正文重复与高相似 ----
+    dup_groups, dup_count, similar_count, dup_examples, similar_pairs = \
+        _option_similarity_audit(questions)
+    stats['option_duplicate_groups'] = dup_groups
+    stats['option_duplicate_occurrences'] = dup_count
+    stats['option_similar_pairs'] = similar_count
+    if dup_groups:
+        first = dup_examples[0]
+        warns.append(
+            '选项正文完全重复：%d 组 / %d 处（示例：%s.%s ↔ %s.%s「%s」）'
+            % (dup_groups, dup_count, first[0], first[2], first[1], first[3],
+               first[4][:28])
+        )
+    if similar_count:
+        ratio, a, b = similar_pairs[0]
+        warns.append(
+            '选项正文高度相似：%d 对（阈值 %.2f；示例：%s.%s「%s」 ≈ %s.%s「%s」，相似度 %.2f）'
+            % (similar_count, T['option_similarity_threshold'],
+               a['qid'], a['label'], a['raw'][:24],
+               b['qid'], b['label'], b['raw'][:24], ratio)
+        )
+
     return stats, warns
 
 
@@ -3335,8 +3583,23 @@ def print_quality_audit(stats, warns):
         print('  答案位置  A%d / B%d / C%d / D%d（%d 道单选）'
               % (p['A'], p['B'], p['C'], p['D'], n))
     if stats.get('multi_total'):
-        print('  不定项    全选 %d/%d = %.0f%%'
-              % (stats['multi_full'], stats['multi_total'], stats['multi_full_pct']))
+        card = stats.get('multi_cardinality') or {}
+        print('  不定项数量 一项%d / 两项%d / 三项%d / 四项%d'
+              % (card.get(1, 0), card.get(2, 0), card.get(3, 0), card.get(4, 0)))
+        if stats.get('multi_top_pattern'):
+            print('  不定项组合 最高 %s = %.0f%%；全选 %.0f%%'
+                  % (stats['multi_top_pattern'], stats['multi_top_pattern_pct'],
+                     stats['multi_full_pct']))
+        letters = stats.get('multi_letter_correct') or {}
+        print('  字母覆盖  A%d / B%d / C%d / D%d'
+              % (letters.get('A', 0), letters.get('B', 0),
+                 letters.get('C', 0), letters.get('D', 0)))
+    if stats.get('option_duplicate_groups'):
+        print('  选项重复  %d 组 / %d 处'
+              % (stats['option_duplicate_groups'],
+                 stats['option_duplicate_occurrences']))
+    if stats.get('option_similar_pairs'):
+        print('  选项相似  %d 对' % stats['option_similar_pairs'])
     if stats.get('opt_len_long'):
         print('  选项长度  极差超标 %d 道' % stats['opt_len_long'])
     print('  ID 唯一性 %s'
@@ -3415,7 +3678,9 @@ def main():
                         help='视觉风格')
     parser.add_argument('--katex', action='store_true', help='启用 KaTeX 公式渲染')
     parser.add_argument('--no-audit', dest='no_audit', action='store_true',
-                        help='跳过构建后的质量自检（默认执行：检查答案位置分布 / 全选率 / 选项长度 / ID 唯一性）')
+                        help='跳过构建后的质量自检（默认执行：答案位置 / 不定项结构 / 选项重复 / 长度 / ID）')
+    parser.add_argument('--strict-audit', action='store_true',
+                        help='严格质量模式：任一审计告警都会使构建返回非零退出码')
     parser.add_argument('--no-balance', dest='no_balance', action='store_true',
                         help='跳过答案位置均衡（默认执行：构建时重排选项，使正确答案均匀分布在 A/B/C/D）')
     parser.add_argument('--no-smart-quotes', '--no-punct-fix', dest='no_punct_fix',
@@ -3537,22 +3802,26 @@ def main():
     # 答案位置均衡：构建期机械重排选项顺序，把答案均匀分散到 A/B/C/D。
     # 必须在质量自检**之前**执行，这样自检报告的是重排后的最终状态。
     if not args.no_balance:
-        _before = collections.Counter(
-            re.findall(r'[A-E]', q['answer'])[0] for q in all_questions
-            if q['type'] == 'single' and len(re.findall(r'[A-E]', q['answer'])) == 1)
-        _moved, _skipped, _refs = balance_answer_positions(all_questions)
-        _after = collections.Counter(
-            re.findall(r'[A-E]', q['answer'])[0] for q in all_questions
-            if q['type'] == 'single' and len(re.findall(r'[A-E]', q['answer'])) == 1)
-        print_balance_report(_moved, _skipped, _refs,
-                             {k: _before.get(k, 0) for k in 'ABCD'},
-                             {k: _after.get(k, 0) for k in 'ABCD'})
+        _single_before = _single_position_counts(all_questions)
+        _multi_before = _multi_pattern_counts(all_questions)
+        _moved, _moved_by_type, _skipped, _refs = balance_answer_positions(all_questions)
+        _single_after = _single_position_counts(all_questions)
+        _multi_after = _multi_pattern_counts(all_questions)
+        print_balance_report(
+            _moved, _moved_by_type, _skipped, _refs,
+            {k: _single_before.get(k, 0) for k in 'ABCD'},
+            {k: _single_after.get(k, 0) for k in 'ABCD'},
+            _multi_before, _multi_after,
+        )
 
     # 质量自检：把 SKILL.md 的内容规范量化后自动核查（只告警，不阻断构建）。
     # 用 --no-audit 可跳过，适用于不关心内容指标、只求快速出页面的场景。
     if not args.no_audit:
         _stats, _warns = quality_audit(all_questions)
         print_quality_audit(_stats, _warns)
+        if args.strict_audit and _warns:
+            print("\n❌ 严格审计未通过：请先修复上述告警再构建发布版本")
+            sys.exit(2)
 
     # 版本哈希
     content_hash = hashlib.md5(json.dumps(all_questions, ensure_ascii=False).encode()).hexdigest()[:8]
