@@ -487,7 +487,8 @@ macOS / Linux 将 `py -3` 换成 `python3`。GitHub Actions 会在
 Windows 与 Ubuntu、Python 3.8 与 3.12、Node.js 22 上执行完整测试。
 
 `evals/` 保存真实工作流评估和已冻结的触发测试集，与 `tests/` 一样只属于源码仓库，
-不会进入 Release ZIP。触发测试集已经用户确认，但尚未执行隔离评分。
+不会进入 Release ZIP。触发测试集已使用 `deepseek-v4-pro` 完成 3 次 trial，
+训练集与保留集均为 8/8，准确率和稳定性均为 1.0。
 
 ---
 

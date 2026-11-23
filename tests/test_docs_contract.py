@@ -42,6 +42,11 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertNotIn('## 版本历史', readme)
         self.assertNotIn('| **v2.13.1', readme)
 
+    def test_readme_reports_completed_trigger_evaluation(self):
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        self.assertIn('训练集与保留集均为 8/8', readme)
+        self.assertIn('deepseek-v4-pro', readme)
+
     def test_build_commands_cover_windows_and_unix(self):
         skill = (ROOT / 'SKILL.md').read_text(encoding='utf-8')
         readme = (ROOT / 'README.md').read_text(encoding='utf-8')
