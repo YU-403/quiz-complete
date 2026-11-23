@@ -3,6 +3,8 @@ name: quiz-complete
 description: 当用户明确要求从参考材料批量生成整套题集、执行首轮校准、从标准 Markdown 题库构建刷题网站，或修改已有 QuizComplete 题库后重建时使用。不要用于解答、讲解或点评单道题，仅做 PDF/Markdown 转换，开发通用问卷、考试系统或网站，或撰写纯教学方案。
 license: MIT
 compatibility: 需要支持 Agent Skills 与本地文件访问的宿主；建站需要 Python 3.8+（仅标准库）；无需网络。
+metadata:
+  version: "2.13.2"
 ---
 
 # 出题建站 · Quiz Complete

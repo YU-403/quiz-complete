@@ -136,6 +136,10 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('python -m unittest discover -s tests -v', workflow)
         self.assertIn('## 测试与持续集成', readme)
 
+    def test_skill_metadata_version_is_v2132(self):
+        skill = (ROOT / 'SKILL.md').read_text(encoding='utf-8')
+        self.assertIn('metadata:\n  version: "2.13.2"', skill)
+
 
 if __name__ == '__main__':
     unittest.main()
