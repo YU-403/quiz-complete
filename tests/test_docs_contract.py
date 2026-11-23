@@ -34,22 +34,25 @@ class DocumentationContractTests(unittest.TestCase):
         skill = (ROOT / 'SKILL.md').read_text(encoding='utf-8')
         readme = (ROOT / 'README.md').read_text(encoding='utf-8')
         pack = (ROOT / 'pack.py').read_text(encoding='utf-8')
+        build_guide = (ROOT / 'references/建站指南.md').read_text(
+            encoding='utf-8'
+        )
 
         self.assertIn('支持 Agent Skills 与本地文件访问的宿主', skill)
-        self.assertIn('py -3 "<skill_dir>\\build.py"', skill)
-        self.assertIn('python3 "<skill_dir>/build.py"', skill)
+        self.assertIn('py -3 "<skill_dir>\\build.py"', build_guide)
+        self.assertIn('python3 "<skill_dir>/build.py"', build_guide)
         self.assertIn('py -3 build.py', readme)
         self.assertIn('python3 build.py', readme)
         self.assertIn('py -3 pack.py', readme)
         self.assertIn('python3 pack.py', readme)
         self.assertIn('py -3 pack.py', pack)
         self.assertIn('python3 pack.py', pack)
-        self.assertIn('--allow-missing-katex', skill)
+        self.assertIn('--allow-missing-katex', build_guide)
         self.assertIn('--allow-missing-katex', readme)
         self.assertNotIn('静默失效', readme)
-        self.assertNotIn('会提示资源缺失并跳过公式渲染', skill)
+        self.assertNotIn('会提示资源缺失并跳过公式渲染', build_guide)
         self.assertIn('不生成或覆盖页面', readme)
-        self.assertIn('解析失败时不生成或覆盖 `index.html`', skill)
+        self.assertIn('不生成或覆盖 `index.html`', build_guide)
 
     def test_requirements_document_is_the_single_project_source(self):
         skill = (ROOT / 'SKILL.md').read_text(encoding='utf-8')
@@ -62,7 +65,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('一次只问一个问题', skill)
         self.assertIn('默认：无（必须选择）', skill)
         self.assertIn('REQUIREMENTS.md', skill)
-        self.assertIn('不得放入 `题库/`', skill)
+        self.assertIn('不能放入 `题库/`', skill)
         self.assertIn('REQUIREMENTS.md', readme)
         self.assertNotIn('FACT.md', skill)
         self.assertNotIn('JOURNAL', skill)
@@ -70,6 +73,33 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('唯一的需求、决策、验收和跨会话恢复来源', template)
         self.assertIn('## 当前有效需求', template)
         self.assertIn('## 需求复核记录', template)
+
+    def test_skill_uses_progressive_disclosure(self):
+        skill_path = ROOT / 'SKILL.md'
+        skill = skill_path.read_text(encoding='utf-8')
+        lines = skill.splitlines()
+
+        self.assertLessEqual(len(lines), 250)
+        self.assertLessEqual(
+            max(
+                (
+                    len(line) - len(line.lstrip('#'))
+                    for line in lines
+                    if line.startswith('#')
+                ),
+                default=0,
+            ),
+            3,
+        )
+        for reference in (
+            'references/需求采集.md',
+            'references/出题规范.md',
+            'references/建站指南.md',
+            'references/需求文档模板.md',
+            'references/模板维护.md',
+        ):
+            self.assertIn(reference, skill)
+            self.assertTrue((ROOT / reference).is_file())
 
     def test_ci_workflow_covers_supported_release_matrix(self):
         workflow_path = ROOT / '.github/workflows/tests.yml'

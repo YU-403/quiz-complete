@@ -19,6 +19,9 @@ REQUIRED_FILES = {
     TOP_LEVEL + 'README.md',
     TOP_LEVEL + 'LICENSE',
     TOP_LEVEL + 'THIRD_PARTY_NOTICES.md',
+    TOP_LEVEL + 'references/需求采集.md',
+    TOP_LEVEL + 'references/出题规范.md',
+    TOP_LEVEL + 'references/建站指南.md',
     TOP_LEVEL + 'references/模板维护.md',
     TOP_LEVEL + 'references/需求文档模板.md',
 }
