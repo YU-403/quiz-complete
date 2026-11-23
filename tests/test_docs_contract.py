@@ -48,6 +48,8 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('--allow-missing-katex', readme)
         self.assertNotIn('静默失效', readme)
         self.assertNotIn('会提示资源缺失并跳过公式渲染', skill)
+        self.assertIn('不生成或覆盖页面', readme)
+        self.assertIn('解析失败时不生成或覆盖 `index.html`', skill)
 
     def test_requirements_document_is_the_single_project_source(self):
         skill = (ROOT / 'SKILL.md').read_text(encoding='utf-8')

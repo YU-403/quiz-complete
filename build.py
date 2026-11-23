@@ -3745,9 +3745,13 @@ def main():
     print("=" * 50)
 
     # 解析题库
+    if not os.path.isdir(args.input):
+        print(f"❌ 题库目录不存在或不是文件夹：{args.input}")
+        sys.exit(2)
     md_files = sorted([os.path.join(dirpath, f) for dirpath, _, filenames in os.walk(args.input) for f in filenames if f.endswith('.md')])
     if not md_files:
-        print("[!] 未找到 .md 文件"); return
+        print(f"❌ 题库目录中没有 Markdown 文件：{args.input}")
+        sys.exit(2)
 
     all_questions = []
     total_blocks = 0
@@ -3829,6 +3833,9 @@ def main():
     print(f"📊 解析结果")
     print(f"  文件内题块: {total_blocks}")
     print(f"  成功解析  : {total_parsed}")
+    if total_blocks == 0:
+        print("\n❌ 构建中止：Markdown 中没有可识别的题目块")
+        sys.exit(2)
     if total_blocks != total_parsed:
         print(f"  ⚠️  {total_blocks - total_parsed} 题未能解析：")
         for fname, failed in failed_all:
@@ -3838,8 +3845,14 @@ def main():
             if len(failed) > 6:
                 print(f"         …另有 {len(failed) - 6} 题")
         print(f"  提示：多为「**答案**」行写法或选项格式未识别，请对照源文件检查")
+        print("\n❌ 构建中止：存在未解析题目，未生成或覆盖 index.html")
+        sys.exit(2)
     else:
         print(f"  ✅ 全部解析成功！")
+
+    if not all_questions:
+        print("\n❌ 构建中止：没有成功解析任何题目")
+        sys.exit(2)
 
     all_tags = sorted(set(q['tag'] for q in all_questions if q['tag']))
     print(f"🏷️  知识点标签: {len(all_tags)} 个")
