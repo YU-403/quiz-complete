@@ -150,7 +150,9 @@ D. 句子
 
 ## 安装
 
-本 Skill 以**源码树**形式维护，压缩包是它的分发形态，**两者内容完全一致**。
+本 Skill 以**源码树**形式维护，压缩包是它的运行分发形态。压缩包包含使用 Skill
+所需的全部文件；源码仓库还包含测试、打包脚本和 Git 配置等开发文件。所有进入
+发布包的运行文件均与对应版本的源码逐字节一致。
 
 ### 方式一：下载压缩包（推荐，无需 Python）
 
@@ -176,17 +178,21 @@ git clone https://github.com/YU-403/quiz-complete.git
 
 > ⚠️ 须**连 `assets/` 目录一起**，否则 `--katex` 公式渲染会静默失效。
 
-### 方式三：自行打包分发
+### 源码维护者：自行打包分发
 
-需要把 Skill 发给他人时，用自带的打包脚本现场生成：
+此方式面向源码维护者，必须从 Git 仓库执行，不能直接在下载后的 Release 目录中运行。
+先获取完整源码并进入仓库：
 
 ```bash
+git clone https://github.com/YU-403/quiz-complete.git
+cd quiz-complete
 python pack.py                     # 输出到 _dist/quiz-complete.zip
 python pack.py --output <路径>      # 指定输出位置
 ```
 
 脚本会在打包前校验 `SKILL.md` 的 frontmatter 是否存在、`assets/` 是否齐全，
-并在打包后复核，避免产出一个「装不上」的压缩包。
+并在打包后复核，避免产出一个「装不上」的压缩包。发布包按设计只包含运行文件；
+`pack.py`、`tests/`、`.gitignore` 和 `.gitattributes` 等源码维护文件不会进入 ZIP。
 
 ---
 

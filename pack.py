@@ -3,6 +3,9 @@
 """
 QuizComplete 打包脚本 — 生成可分发的 skill 压缩包
 
+本脚本是源码维护工具，并被自身排除在发布包之外；必须从完整 Git 源码目录运行，
+不能从下载后的 Release 压缩包内部运行。
+
 用法:
     python pack.py                    # 输出到 _dist/quiz-complete.zip
     python pack.py --output <路径>     # 指定输出位置
@@ -16,7 +19,8 @@ QuizComplete 打包脚本 — 生成可分发的 skill 压缩包
 2. **保留 SKILL.md 的 frontmatter。**
    历史版本的打包流程会剥掉 frontmatter，导致「压缩包版」与「仓库版」内容不一致——
    从仓库 clone 安装能用，从压缩包安装却识别不出 skill。
-   本文档所在仓库以源码树为准，压缩包必须与源码一致。
+   本文档所在仓库以源码树为准；所有进入发布包的运行文件必须与源码逐字节一致。
+   tests/、pack.py 和 Git 配置等开发文件按设计只保留在源码仓库。
 
 3. **连 assets/ 一起打包。**
    build.py 依赖同目录的 assets/katex/；缺失时 --katex 会静默跳过公式渲染。
