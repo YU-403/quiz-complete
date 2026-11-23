@@ -183,15 +183,18 @@ D. 句子
 
 | 宿主 | Windows 全局目录 | macOS / Linux |
 |:-----|:-----------------|:--------------|
-| Codex | `%USERPROFILE%\.codex\skills\quiz-complete\` | `~/.codex/skills/quiz-complete/` |
+| Codex | `<CODEX_HOME>\skills\quiz-complete\` | `<CODEX_HOME>/skills/quiz-complete/` |
 | WorkBuddy | `%USERPROFILE%\.workbuddy\skills\quiz-complete\` | `~/.workbuddy/skills/quiz-complete/` |
-| Claude Code | `%USERPROFILE%\.claude\skills\quiz-complete\` | `~/.claude/skills/quiz-complete/` |
+| Claude Code | `<CLAUDE_CONFIG_DIR>\skills\quiz-complete\` | `<CLAUDE_CONFIG_DIR>/skills/quiz-complete/` |
 | DeepSeek Harness（DSH） | `%USERPROFILE%\.dsh\skills\quiz-complete\` | `~/.dsh/skills/quiz-complete/` |
 | 其他 Agent | 使用宿主自己的 Skills 目录 | 使用宿主自己的 Skills 目录 |
 
 > ⚠️ **目录名须为 `quiz-complete`**（与 `SKILL.md` 中 frontmatter 的 `name` 一致），
 > 否则客户端无法识别此 Skill。
 > 也不要把目录里的文件摊开平铺——必须是 `quiz-complete/` 这一层目录本身。
+
+`CODEX_HOME` 和 `CLAUDE_CONFIG_DIR` 未设置时，使用对应宿主文档中的用户级
+Skills 目录；不要把示例变量名当成固定绝对路径。
 
 DSH 也可以使用 DSH Skills Manager 从 GitHub 安装或更新。Skills Manager 能只读扫描
 Codex、WorkBuddy、Claude Code 等外部来源，但不会替这些宿主移动或改写技能文件。
@@ -514,6 +517,8 @@ Windows 与 Ubuntu、Python 3.8 与 3.12、Node.js 22 上执行完整测试。
 ## 许可
 
 本项目采用 **MIT License**，详见 [LICENSE](LICENSE)。
+KaTeX 等第三方组件说明见
+[THIRD_PARTY_NOTICES.md](references/THIRD_PARTY_NOTICES.md)。
 
 简言之：可自由使用、修改、分发，包括商业用途，只需保留版权声明。
 （此前文档中「禁止商业用途」的表述已废除——无 LICENSE 文件时法律上默认为

@@ -16,13 +16,13 @@ class DocumentationContractTests(unittest.TestCase):
         for host in ('Codex', 'WorkBuddy', 'Claude Code', 'DeepSeek Harness（DSH）'):
             self.assertIn(host, readme)
         for path in (
-            '%USERPROFILE%\\.codex\\skills\\quiz-complete\\',
+            '<CODEX_HOME>\\skills\\quiz-complete\\',
             '%USERPROFILE%\\.workbuddy\\skills\\quiz-complete\\',
-            '%USERPROFILE%\\.claude\\skills\\quiz-complete\\',
+            '<CLAUDE_CONFIG_DIR>\\skills\\quiz-complete\\',
             '%USERPROFILE%\\.dsh\\skills\\quiz-complete\\',
-            '~/.codex/skills/quiz-complete/',
+            '<CODEX_HOME>/skills/quiz-complete/',
             '~/.workbuddy/skills/quiz-complete/',
-            '~/.claude/skills/quiz-complete/',
+            '<CLAUDE_CONFIG_DIR>/skills/quiz-complete/',
             '~/.dsh/skills/quiz-complete/',
         ):
             self.assertIn(path, readme)
@@ -112,6 +112,7 @@ class DocumentationContractTests(unittest.TestCase):
             'references/建站指南.md',
             'references/需求文档模板.md',
             'references/模板维护.md',
+            'references/THIRD_PARTY_NOTICES.md',
         ):
             self.assertIn(reference, skill)
             self.assertTrue((ROOT / reference).is_file())

@@ -64,6 +64,9 @@ compatibility: 需要支持 Agent Skills 与本地文件访问的宿主；建站
 5. 构建成功需退出码为 0 且全部题块解析成功。
 6. 用户后续修改题库时，完成修改后直接重新运行构建并更新需求文档。
 
+第三方组件与许可说明见
+[`references/THIRD_PARTY_NOTICES.md`](references/THIRD_PARTY_NOTICES.md)。
+
 ## 需求文档是唯一来源
 
 `REQUIREMENTS.md` 保存：

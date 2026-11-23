@@ -11,7 +11,7 @@
 - **版本**：随仓库内文件为准
 - **许可**：MIT License
 - **版权**：Copyright (c) 2013-2020 Khan Academy and other contributors
-- **许可全文**：见 [`assets/katex/LICENSE`](assets/katex/LICENSE)
+- **许可全文**：见 [`assets/katex/LICENSE`](../assets/katex/LICENSE)
 - **项目主页**：https://katex.org/
 
 **说明**：KaTeX 的脚本（`katex.min.js`）、样式（`katex.min.css`）与 20 个 woff2 字体文件

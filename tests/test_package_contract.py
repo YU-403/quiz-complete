@@ -18,7 +18,7 @@ REQUIRED_FILES = {
     TOP_LEVEL + 'build.py',
     TOP_LEVEL + 'README.md',
     TOP_LEVEL + 'LICENSE',
-    TOP_LEVEL + 'THIRD_PARTY_NOTICES.md',
+    TOP_LEVEL + 'references/THIRD_PARTY_NOTICES.md',
     TOP_LEVEL + 'references/需求采集.md',
     TOP_LEVEL + 'references/出题规范.md',
     TOP_LEVEL + 'references/建站指南.md',
