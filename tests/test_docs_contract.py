@@ -30,6 +30,18 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertNotIn('兼容 Claude Agent', readme)
         self.assertNotIn('Cherry Studio', readme)
 
+    def test_readme_history_points_to_releases(self):
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+
+        self.assertIn('## 版本记录', readme)
+        self.assertIn(
+            'https://github.com/YU-403/quiz-complete/releases',
+            readme,
+        )
+        self.assertIn('https://github.com/YU-403/quiz-complete/tags', readme)
+        self.assertNotIn('## 版本历史', readme)
+        self.assertNotIn('| **v2.13.1', readme)
+
     def test_build_commands_cover_windows_and_unix(self):
         skill = (ROOT / 'SKILL.md').read_text(encoding='utf-8')
         readme = (ROOT / 'README.md').read_text(encoding='utf-8')
