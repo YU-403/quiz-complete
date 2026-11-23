@@ -44,6 +44,10 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('python3 pack.py', readme)
         self.assertIn('py -3 pack.py', pack)
         self.assertIn('python3 pack.py', pack)
+        self.assertIn('--allow-missing-katex', skill)
+        self.assertIn('--allow-missing-katex', readme)
+        self.assertNotIn('静默失效', readme)
+        self.assertNotIn('会提示资源缺失并跳过公式渲染', skill)
 
     def test_requirements_document_is_the_single_project_source(self):
         skill = (ROOT / 'SKILL.md').read_text(encoding='utf-8')

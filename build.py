@@ -4,7 +4,7 @@
 《刷题网站生成器》— 统一构建脚本
 用法: python build.py --input <题库路径> --title <标题> --output <输出目录>
                       [--modes topic,random,career,wrong,tag,exam] [--style 宣纸|瑞士|卡片]
-                      [--katex] [--prefix <存储前缀>]
+                      [--katex] [--allow-missing-katex] [--prefix <存储前缀>]
 
 依赖: Python 标准库（os, re, json, hashlib, argparse），零第三方依赖。
 
@@ -3717,6 +3717,11 @@ def main():
     parser.add_argument('--style', choices=list(STYLES.keys()), default='宣纸',
                         help='视觉风格')
     parser.add_argument('--katex', action='store_true', help='启用 KaTeX 公式渲染')
+    parser.add_argument(
+        '--allow-missing-katex',
+        action='store_true',
+        help='KaTeX 资源缺失时允许降级构建（默认失败）',
+    )
     parser.add_argument('--no-audit', dest='no_audit', action='store_true',
                         help='跳过构建后的质量自检（默认执行：答案位置 / 不定项结构 / 选项重复 / 长度 / ID）')
     parser.add_argument('--strict-audit', action='store_true',
@@ -3931,7 +3936,15 @@ def main():
     if args.katex:
         katex_css, katex_js = load_katex()
         if katex_css is None:
-            print("⚠️  未找到 KaTeX 资源（assets/katex/），本次跳过公式渲染")
+            message = (
+                "KaTeX 资源不完整或缺失，无法满足 --katex 请求。\n"
+                "请恢复 assets/katex/ 后重试；如需故意生成无公式页面，"
+                "请显式添加 --allow-missing-katex。"
+            )
+            if not args.allow_missing_katex:
+                print(f"❌ {message}")
+                sys.exit(2)
+            print(f"⚠️  {message}\n本次已按显式降级参数继续，公式将显示原文。")
     if katex_css and katex_js:
         html = html.replace('__KATEX_CSS__', katex_css)
         html = html.replace('__KATEX_JS__', '<script>' + katex_js + '</script>')

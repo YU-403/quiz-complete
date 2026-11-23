@@ -421,6 +421,7 @@ python3 "<skill_dir>/build.py" \
 | `--style` | | 宣纸 / 瑞士 / 卡片（默认: 宣纸） |
 | `--subtitle` | | 副标题 |
 | `--katex` | | 启用 KaTeX 公式渲染（内联约 630 KB；不加则公式显示原文） |
+| `--allow-missing-katex` | | KaTeX 资源缺失时允许显式降级；默认不启用，缺资源时构建失败 |
 | `--custom-css` | | 自定义 CSS 变量覆盖（轻度定制配色，无需 fork 模板） |
 | `--no-balance` | | 跳过答案均衡（默认执行：单选位置与不定项具体组合都会重排） |
 | `--no-audit` | | 跳过构建后质量自检 |
@@ -444,7 +445,9 @@ python3 "<skill_dir>/build.py" \
 
 > **标点规范化**：构建时自动把题库里的 `"` `'` 转成 `“”` `‘’`、`...` 转成 `……`、`--` 转成 `——`。因此**出题时无需刻意回避直引号**，写法随意即可；英文撇号（don't）与反引号代码段会自动保留。该转换发生在题目 ID 计算之后，不会影响用户已有进度，需要关闭时用 `--no-smart-quotes`。
 
-> build.py 依赖同目录下的 `assets/katex/`（KaTeX 资源，仅 `--katex` 时读取）。移动或分发 skill 时需连同该目录一起，否则 `--katex` 会提示资源缺失并跳过公式渲染。
+> build.py 依赖同目录下的 `assets/katex/`（KaTeX 资源，仅 `--katex` 时读取）。
+> 使用 `--katex` 但资源缺失时，构建会返回非零退出码且不覆盖已有 `index.html`。
+> 只有经用户明确同意时，才可添加 `--allow-missing-katex` 生成无公式降级页面。
 
 超出模板范围的定制（如特殊布局、额外功能）：复制模板 build.py → 修改 HTML_TEMPLATE / JS 逻辑 → 运行。模板中 90% 的稳定代码不需要动。
 
