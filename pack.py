@@ -7,9 +7,10 @@ QuizComplete 打包脚本 — 生成可分发的 skill 压缩包
 不能从下载后的 Release 压缩包内部运行。
 
 用法:
-    python pack.py                    # 输出到 _dist/quiz-complete.zip
-    python pack.py --output <路径>     # 指定输出位置
-    python pack.py --name <目录名>     # 指定包内顶层目录名（默认 quiz-complete）
+    py -3 pack.py                     # Windows：输出到 _dist/quiz-complete.zip
+    python3 pack.py                   # macOS / Linux
+    py -3 pack.py --output <路径>      # 指定输出位置
+    py -3 pack.py --name <目录名>      # 指定包内顶层目录名（默认 quiz-complete）
 
 设计要点（每一条都对应一次实际踩过的坑）：
 

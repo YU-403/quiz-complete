@@ -1,7 +1,8 @@
 # Quiz Complete · 出题建站一体
 
-> **本仓库是一个 AI Agent Skill，用于导入到兼容 Claude Agent 的客户端（如 CherryStudio 等）中使用。**
-> AI 会按照本 Skill 定义的工作流，全自动完成从出题到建站的全部步骤。
+> **本仓库是一个 AI Agent Skill，适用于 Codex、WorkBuddy、Claude Code 和
+> DeepSeek Harness（DSH）等支持 Agent Skills 与本地文件访问的环境。**
+> AI 会按照本 Skill 定义的工作流，完成从出题到建站的全部步骤。
 
 ---
 
@@ -154,19 +155,25 @@ D. 句子
 所需的全部文件；源码仓库还包含测试、打包脚本和 Git 配置等开发文件。所有进入
 发布包的运行文件均与对应版本的源码逐字节一致。
 
-### 方式一：下载压缩包（推荐，无需 Python）
+### 方式一：下载压缩包（安装无需运行 Python）
 
 前往 [**Releases**](../../releases) 页面下载最新版 `quiz-complete.zip`，
 解压后把 `quiz-complete/` 整个目录放入客户端的 Skill 目录：
 
-| 客户端 | Skill 目录 |
-|:-------|:-----------|
-| Cherry Studio | `…/CherryStudio/Data/Skills/quiz-complete/` |
-| Claude Code | `~/.claude/skills/quiz-complete/` |
+| 宿主 | Windows 全局目录 | macOS / Linux |
+|:-----|:-----------------|:--------------|
+| Codex | `%USERPROFILE%\.codex\skills\quiz-complete\` | `~/.codex/skills/quiz-complete/` |
+| WorkBuddy | `%USERPROFILE%\.workbuddy\skills\quiz-complete\` | `~/.workbuddy/skills/quiz-complete/` |
+| Claude Code | `%USERPROFILE%\.claude\skills\quiz-complete\` | `~/.claude/skills/quiz-complete/` |
+| DeepSeek Harness（DSH） | `%USERPROFILE%\.dsh\skills\quiz-complete\` | `~/.dsh/skills/quiz-complete/` |
+| 其他 Agent | 使用宿主自己的 Skills 目录 | 使用宿主自己的 Skills 目录 |
 
 > ⚠️ **目录名须为 `quiz-complete`**（与 `SKILL.md` 中 frontmatter 的 `name` 一致），
 > 否则客户端无法识别此 Skill。
 > 也不要把目录里的文件摊开平铺——必须是 `quiz-complete/` 这一层目录本身。
+
+DSH 也可以使用 DSH Skills Manager 从 GitHub 安装或更新。Skills Manager 能只读扫描
+Codex、WorkBuddy、Claude Code 等外部来源，但不会替这些宿主移动或改写技能文件。
 
 ### 方式二：从源码安装
 
@@ -186,8 +193,10 @@ git clone https://github.com/YU-403/quiz-complete.git
 ```bash
 git clone https://github.com/YU-403/quiz-complete.git
 cd quiz-complete
-python pack.py                     # 输出到 _dist/quiz-complete.zip
-python pack.py --output <路径>      # 指定输出位置
+py -3 pack.py                      # Windows：输出到 _dist/quiz-complete.zip
+py -3 pack.py --output <路径>       # Windows：指定输出位置
+python3 pack.py                    # macOS / Linux
+python3 pack.py --output <路径>
 ```
 
 脚本会在打包前校验 `SKILL.md` 的 frontmatter 是否存在、`assets/` 是否齐全，
@@ -202,12 +211,21 @@ python pack.py --output <路径>      # 指定输出位置
 
 | 组件 | 必/可选 | 版本要求 | 说明 |
 |:-----|:-------:|:---------|:-----|
-| **AI 客户端** | ✅ 必选 | 兼容 Claude Agent | CherryStudio、Claude Code 等，用于导入本 Skill 并驱动出题流程 |
+| **Agent 宿主** | ✅ 必选 | 支持 Agent Skills 与本地文件访问 | Codex、WorkBuddy、Claude Code、DeepSeek Harness（DSH）等，用于导入并驱动本 Skill |
 | **Python 3** | ⚠️ 建站必需 | 3.8+ | 运行 `build.py`；仅标准库，无需 pip 安装任何包 |
 | **浏览器** | ⚠️ 使用必需 | 现代浏览器 | 打开生成的刷题网站；Chrome / Edge / Firefox 均可 |
 | **OCR 工具** | ⚠️ 材料为扫描件时 | MinerU | 阶段一可选依赖，用于将 PDF / 扫描件转为可读文本（调用时需你确认） |
 
-> 说明：**只出题不做网站**时无需 Python 与浏览器；**已有题库只想建站**时无需 OCR。两者都只需要 AI 客户端。
+> 说明：**只出题不做网站**时无需 Python 与浏览器；**已有题库只想建站**时无需 OCR。
+> 下载安装包本身不需要运行 Python，但生成或重建刷题网站仍需要 Python 3.8+。
+
+### 本轮验证范围
+
+- **已实测**：Windows 11、PowerShell、Python 3.12、Codex 工作区中的构建、打包和测试。
+- **已完成语法检查**：`build.py` 可按 Python 3.8 语法解析，但未在 Python 3.8 解释器实机运行。
+- **已确认目录**：WorkBuddy 的 `~/.workbuddy/skills` 与 DSH 的 `~/.dsh/skills` 均为对应宿主的 Skills 目录。
+- **尚未实机验证**：WorkBuddy、Claude Code、DSH 中的完整出题建站流程，以及 macOS / Linux。
+- Skill 不依赖网络和 API Key；核心运行要求是 Agent 能读取本地文件并执行 Python。
 
 ### 输入材料要求
 
@@ -331,10 +349,21 @@ AI 在执行阶段一（出题）时，会按照以下步骤操作：
 
 ### CLI 参数说明
 
-建站时 AI 会自动调用模板 build.py，你也可以手动执行：
+建站时 AI 会自动调用模板 `build.py`，你也可以手动执行。
+
+Windows PowerShell：
+
+```powershell
+py -3 build.py `
+  --input "题库路径" `
+  --title "网站标题" `
+  --output "输出目录"
+```
+
+macOS / Linux：
 
 ```bash
-python build.py \
+python3 build.py \
   --input "题库路径" \
   --title "网站标题" \
   --output "输出目录"
@@ -362,8 +391,20 @@ python build.py \
 
 不需要修改 build.py。在调用命令中加入 `--custom-css` 参数即可覆盖任意 CSS 变量：
 
+Windows PowerShell：
+
+```powershell
+py -3 build.py `
+  --input "题库路径" `
+  --title "标题" `
+  --output "输出目录" `
+  --custom-css ":root { --accent: #e74c3c; --bg-page: #fdf6ec; }"
+```
+
+macOS / Linux：
+
 ```bash
-python build.py \
+python3 build.py \
   --input "题库路径" \
   --title "标题" \
   --output "输出目录" \

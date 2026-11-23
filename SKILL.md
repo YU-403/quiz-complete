@@ -2,7 +2,7 @@
 name: quiz-complete
 description: 从参考材料到刷题网站的一站式流水线：阶段一出题生成 Markdown 题集，阶段二调用模板 build.py 构建纯前端刷题网站。支持六种刷题模式、KaTeX 公式、进度持久化。触发词：出题、生成刷题网站、题库建站、帮我出几道题再做成网站。
 license: MIT
-compatibility: 需要 Python 3.8+（仅标准库，无第三方依赖）；无需网络。
+compatibility: 需要支持 Agent Skills 与本地文件访问的宿主；建站需要 Python 3.8+（仅标准库）；无需网络。
 ---
 
 # 出题建站 · Quiz Complete
@@ -349,8 +349,22 @@ D. 选项四
 
 **第一步：调用模板 build.py**
 
+Windows PowerShell：
+
+```powershell
+py -3 "<skill_dir>\build.py" `
+  --input "题库路径" `
+  --title "网站标题" `
+  --output "输出目录" `
+  --modes topic,random,career,wrong,tag,exam `
+  --style 宣纸 `
+  --subtitle "副标题"
+```
+
+macOS / Linux：
+
 ```bash
-python <skill_dir>/build.py \
+python3 "<skill_dir>/build.py" \
   --input "题库路径" \
   --title "网站标题" \
   --output "输出目录" \

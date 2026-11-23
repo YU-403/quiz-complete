@@ -80,6 +80,8 @@ class PackageContractTests(unittest.TestCase):
                     '不能直接在下载后的 Release 目录中运行',
                     readme,
                 )
+                self.assertIn('WorkBuddy', readme)
+                self.assertIn('DeepSeek Harness（DSH）', readme)
 
             extracted = tmp_path / 'extracted'
             with zipfile.ZipFile(output_zip) as archive:
