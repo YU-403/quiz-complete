@@ -3143,10 +3143,42 @@ MULTI_CARDINALITY_TARGET_PCT = {1: 20, 2: 35, 3: 35, 4: 10}
 # 位置敏感的选项：这类选项必须固定在末位，旋转会破坏其语义，故跳过硬性重排
 _FIXED_OPTION = re.compile(r'以上|上述|全都|都不对|都正确|其余|其他各项|前三项|后三项')
 
+# 题干、选项、解析或知识标签对选项字母的显式引用。
+# 这些文字不会被选项重排同步修改，因此命中时整道题必须保持原顺序。
+_OPTION_LETTER_REFERENCE = re.compile(
+    r'(?<![A-Za-z])(?:'
+    r'[A-D]\s*[项項]'
+    r'|(?:选|選)项\s*[A-D]'
+    r'|[A-D]\s*(?:选|選)项'
+    r'|[（(]\s*[A-D]\s*[)）]'
+    r'|[A-D](?:\s*[、,，/与和及]\s*[A-D])+'
+    r'\s*(?:均|都|两|兩|正确|正確|错误|錯誤)'
+    r')'
+)
+
 
 def _strip_option_prefix(text):
     """去掉选项开头的「A.」「B、」等标号，只留正文。"""
     return re.sub(r'^\s*[A-E]\s*[.、）)]?\s*', '', text).strip()
+
+
+def _has_option_letter_reference(question):
+    """判断用户可见内容是否引用了选项字母。
+
+    选项正文先去掉「A.」等标号，避免把标号自身误当成引用。
+    命中时跳过重排比改写题目更安全，因为引用可能出现在题干、选项、
+    解析或知识标签中的任一位置，而且自然语言里的引用形式无法穷举。
+    """
+    texts = [
+        question.get('question') or '',
+        question.get('explanation') or '',
+        question.get('tag') or '',
+    ]
+    texts.extend(
+        _strip_option_prefix(option)
+        for option in (question.get('options') or [])
+    )
+    return any(_OPTION_LETTER_REFERENCE.search(text) for text in texts)
 
 
 def _answer_letters(question):
@@ -3183,7 +3215,7 @@ def balance_answer_positions(questions):
     后者会让“只选前三项”成为稳定猜题策略，即使没有出现 ABCD 全选。
 
     【原理】
-    选项的**顺序**对题目语义没有约束，可以机械置换：
+    选项正文可以随答案位置一起移动，但不能忽略题目内部的位置引用：
 
     - 单选按 A/B/C/D 位置均衡；
     - 不定项先按正确项数量 1/2/3/4 分层，再在同层内均衡具体组合。
@@ -3193,8 +3225,11 @@ def balance_answer_positions(questions):
 
         ABC → ACD        原正确项移动到 A/C/D
 
-    仅一类例外必须排除：含「以上都对」「上述各项」等**指代位置**的选项，
-    它们天然要求固定末位，旋转会破坏语义。本函数会跳过这类题。
+    两类例外必须排除：
+    1. 含「以上都对」「上述各项」等**指代位置**的选项，它们要求固定末位；
+    2. 题干、选项、解析或知识标签引用了「A项」「选项A」「A和B都正确」等
+       选项标号。这些引用不会随选项正文一起移动，重排后可能指错对象。
+    本函数在写入前跳过这两类题。
 
     【重要边界】
       本函数只能改变选项顺序，不能改变一道题有“几个”正确项。
@@ -3204,8 +3239,8 @@ def balance_answer_positions(questions):
       - **结果可复现**：选择依据是题目 ID 的哈希，不含随机数，重复构建结果一致
       - **不影响用户进度**：题目 ID 基于「分节名 + 题干」生成，与选项顺序无关，
         旋转选项不会改变 ID，用户既有的作答记录 / 错题池 / 收藏均不受影响
-      - **不触碰解析**：本函数只改选项顺序与答案字母；若解析文字里显式引用了
-        「A项」「B项」，旋转后该引用会失准。此类题会在构建结果中列出，供人工核对。
+      - **保持语义引用**：只重排不含位置敏感选项、且题干 / 选项 / 解析 /
+        知识标签均未引用选项字母的题。其余题保持原顺序并计入跳过报告。
 
     【可关闭】
       --no-balance 跳过本步骤，保持题库原始顺序。
@@ -3217,6 +3252,7 @@ def balance_answer_positions(questions):
     letters = 'ABCD'
     groups = collections.defaultdict(list)
     skipped = []
+    letter_refs = []
     for q in questions:
         if q.get('type') not in ('single', 'multiple') or len(q.get('options') or []) != 4:
             continue
@@ -3228,13 +3264,15 @@ def balance_answer_positions(questions):
         if any(_FIXED_OPTION.search(_strip_option_prefix(o)) for o in q['options']):
             skipped.append(q)
             continue
+        if _has_option_letter_reference(q):
+            letter_refs.append(q)
+            continue
         # 单选与多选必须分开均衡：两者即使都只有一个正确答案，
         # 也不应互相占用 A/B/C/D 的配额。
         groups[(q['type'], len(ans))].append(q)
 
     moved = 0
     moved_by_type = collections.Counter()
-    moved_questions = []
     for qtype, cardinality in sorted(groups):
         group = groups[(qtype, cardinality)]
         combos = [''.join(c) for c in itertools.combinations(letters, cardinality)]
@@ -3289,11 +3327,6 @@ def balance_answer_positions(questions):
             q['answer'] = ' · '.join(target)
             moved += 1
             moved_by_type[q['type']] += 1
-            moved_questions.append(q)
-
-    # 解析中显式引用了选项字母的题（旋转后会失准），列出供人工核对
-    ref = re.compile(r'(?<![A-Za-z])[A-D]\s*[项項]')
-    letter_refs = [q for q in moved_questions if ref.search(q.get('explanation') or '')]
 
     return moved, moved_by_type, skipped, letter_refs
 
@@ -3306,7 +3339,7 @@ def _counter_summary(counter, limit=6):
 def print_balance_report(moved, moved_by_type, skipped, letter_refs,
                          single_before, single_after, multi_before, multi_after):
     """打印答案位置均衡的处理报告。"""
-    if moved == 0 and not skipped and multi_before == multi_after:
+    if moved == 0 and not skipped and not letter_refs and multi_before == multi_after:
         return
     print(f"\n⚖️  答案位置均衡")
     if single_before and single_after:
@@ -3321,7 +3354,7 @@ def print_balance_report(moved, moved_by_type, skipped, letter_refs,
     if skipped:
         print(f"  跳过 {len(skipped)} 道（含「以上都对」等位置敏感选项）")
     if letter_refs:
-        print(f"  ⚠️  {len(letter_refs)} 道题的解析引用了选项字母，重排后可能失准，建议核对：")
+        print(f"  跳过 {len(letter_refs)} 道（题干 / 选项 / 解析 / 知识标签引用了选项字母）")
         for q in letter_refs[:5]:
             print(f"     · {q['question'][:38]}")
 

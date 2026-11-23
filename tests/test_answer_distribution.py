@@ -92,6 +92,30 @@ def markdown_for(questions):
     return '\n'.join(blocks)
 
 
+def markdown_for_singles(questions):
+    blocks = ['# 测试章节', '', '## 一、单选题', '']
+    for idx, question in enumerate(questions, 1):
+        blocks.extend([
+            '### 第 %d 题（单选题）' % idx,
+            '',
+            question['question'],
+            '',
+        ])
+        blocks.extend(question['options'])
+        blocks.extend([
+            '',
+            '**答案**：%s' % question['answer'],
+            '',
+            '**解析**：%s' % question['explanation'],
+            '',
+            '**知识回溯**：测试标签',
+            '',
+            '---',
+            '',
+        ])
+    return '\n'.join(blocks)
+
+
 class AnswerDistributionTests(unittest.TestCase):
     def test_single_positions_balanced_and_correct_content_preserved(self):
         questions = [
@@ -244,7 +268,7 @@ class AnswerDistributionTests(unittest.TestCase):
         self.assertEqual(question['type'], 'multiple')
         self.assertEqual(question['answer'], 'A')
 
-    def test_explanation_letter_references_are_reported(self):
+    def test_explanation_letter_references_are_skipped_without_mutation(self):
         questions = [
             make_question(
                 'letter-ref-%d' % idx,
@@ -254,12 +278,110 @@ class AnswerDistributionTests(unittest.TestCase):
             )
             for idx in range(8)
         ]
+        originals = copy.deepcopy(questions)
 
-        moved, _moved_by_type, _skipped, refs = BUILD.balance_answer_positions(questions)
+        moved, moved_by_type, skipped, refs = BUILD.balance_answer_positions(questions)
 
-        self.assertGreater(moved, 0)
-        self.assertTrue(refs)
-        self.assertTrue(all(question in refs for question in questions if question['answer'] != 'A · B · C'))
+        self.assertEqual(moved, 0)
+        self.assertEqual(sum(moved_by_type.values()), 0)
+        self.assertEqual(skipped, [])
+        self.assertEqual(refs, questions)
+        for question, original in zip(questions, originals):
+            self.assertEqual(question['options'], original['options'])
+            self.assertEqual(question['answer'], original['answer'])
+            self.assertEqual(question['explanation'], original['explanation'])
+
+    def test_letter_references_in_all_visible_text_are_detected(self):
+        questions = []
+        mutations = [
+            lambda q: q.update(question='题干显式提到 A项。'),
+            lambda q: q.update(options=[
+                'A. 本项提到选项B。', 'B. 干扰项二',
+                'C. 干扰项三', 'D. 干扰项四',
+            ]),
+            lambda q: q.update(explanation='A、B均正确，其余不符合。'),
+            lambda q: q.update(tag='与（C）有关的知识点'),
+        ]
+        for idx, mutate in enumerate(mutations):
+            question = make_question('surface-ref-%d' % idx, 'single', 1)
+            mutate(question)
+            questions.append(question)
+
+        self.assertTrue(all(BUILD._has_option_letter_reference(q) for q in questions))
+
+        moved, _moved_by_type, skipped, refs = BUILD.balance_answer_positions(questions)
+
+        self.assertEqual(moved, 0)
+        self.assertEqual(skipped, [])
+        self.assertEqual(refs, questions)
+
+    def test_letter_referenced_singles_keep_content_through_strict_cli(self):
+        questions = [
+            make_question('strict-ref-%d' % idx, 'single', 1, file='strict-ref')
+            for idx in range(4)
+        ]
+        for question, answer in zip(questions, LETTERS):
+            question['answer'] = answer
+            question['explanation'] = '%s项是正确答案，其余均不符合。' % answer
+        originals = [
+            (
+                question['options'],
+                question['answer'],
+                question['explanation'],
+            )
+            for question in questions
+        ]
+
+        with tempfile.TemporaryDirectory(prefix='quiz-complete-ref-safe-') as tmp:
+            tmp_path = pathlib.Path(tmp)
+            input_dir = tmp_path / 'input'
+            output_dir = tmp_path / 'output'
+            input_dir.mkdir()
+            (input_dir / 'questions.md').write_text(
+                markdown_for_singles(questions), encoding='utf-8'
+            )
+
+            run = subprocess.run(
+                [
+                    sys.executable,
+                    str(BUILD_PATH),
+                    '--input', str(input_dir),
+                    '--title', '引用保护测试',
+                    '--output', str(output_dir),
+                    '--modes', 'topic',
+                    '--strict-audit',
+                ],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=60,
+            )
+
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertIn(
+                '题干 / 选项 / 解析 / 知识标签引用了选项字母',
+                run.stdout,
+            )
+            output_html = (output_dir / 'index.html').read_text(encoding='utf-8')
+            match = re.search(
+                r'const allQuestions = (\[.*?\]);',
+                output_html,
+                re.DOTALL,
+            )
+            self.assertIsNotNone(match)
+            built = json.loads(match.group(1))
+            self.assertEqual(len(built), len(originals))
+            for question, original in zip(built, originals):
+                self.assertEqual(
+                    (
+                        question['options'],
+                        question['answer'],
+                        question['explanation'],
+                    ),
+                    original,
+                )
 
     def test_duplicate_and_similar_options_are_reported(self):
         first = make_question('duplicate-a', 'single', 1, file='duplicate')
