@@ -45,7 +45,7 @@ REQUIRED_DIRS = ['assets/katex']
 
 # 排除项：开发用文件与产物，不应进入分发包
 EXCLUDE_PATTERNS = [
-    '.git', '.gitignore', '.gitattributes', '__pycache__', '.pytest_cache',
+    '.git', '.github', '.gitignore', '.gitattributes', '__pycache__', '.pytest_cache',
     '_dist', 'tests', 'pack.py', 'index.html', 'build.bat', '*.pyc', '*.bak', '*.zip',
     '.DS_Store', 'Thumbs.db',
 ]

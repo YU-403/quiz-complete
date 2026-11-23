@@ -456,6 +456,18 @@ AI 会自动重新运行 `build.py`，生成新的 `index.html`。构建阶段�
 AI 会先读取工作目录中的 `REQUIREMENTS.md`，恢复需求、验收标准和执行进度，
 再用新材料出题或追加到已有文件末尾。该流程不依赖宿主长期记忆或本地私有状态文件。
 
+## 测试与持续集成
+
+测试仅使用 Python 标准库；JavaScript 语法检查需要 Node.js。
+
+```powershell
+py -3 -m compileall -q build.py pack.py tests
+py -3 -m unittest discover -s tests -v
+```
+
+macOS / Linux 将 `py -3` 换成 `python3`。GitHub Actions 会在
+Windows 与 Ubuntu、Python 3.8 与 3.12、Node.js 22 上执行完整测试。
+
 ---
 
 ## 版本历史

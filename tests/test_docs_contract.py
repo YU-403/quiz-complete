@@ -71,6 +71,20 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('## 当前有效需求', template)
         self.assertIn('## 需求复核记录', template)
 
+    def test_ci_workflow_covers_supported_release_matrix(self):
+        workflow_path = ROOT / '.github/workflows/tests.yml'
+        workflow = workflow_path.read_text(encoding='utf-8')
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+
+        self.assertTrue(workflow_path.is_file())
+        self.assertIn('ubuntu-latest', workflow)
+        self.assertIn('windows-latest', workflow)
+        self.assertIn('"3.8"', workflow)
+        self.assertIn('"3.12"', workflow)
+        self.assertIn('node-version: "22"', workflow)
+        self.assertIn('python -m unittest discover -s tests -v', workflow)
+        self.assertIn('## 测试与持续集成', readme)
+
 
 if __name__ == '__main__':
     unittest.main()
