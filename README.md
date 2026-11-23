@@ -405,6 +405,7 @@ python3 build.py \
 | `--subtitle` | | 副标题，显示在首页标题下方 |
 | `--katex` | | 启用 KaTeX 公式渲染（内联约 630 KB，保持离线单文件；题库含公式时使用） |
 | `--allow-missing-katex` | | KaTeX 资源缺失时允许显式降级；默认关闭，缺资源时构建失败 |
+| `--audit-profile` | | 项目级审计阈值 JSON；只覆盖文件内明确提供的字段 |
 | `--custom-css` | | 自定义 CSS 变量覆盖（轻度定制配色，无需修改模板） |
 | `--prefix` | | localStorage 存储前缀（通常自动生成，无需手动指定） |
 

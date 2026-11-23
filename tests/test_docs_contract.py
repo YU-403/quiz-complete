@@ -49,6 +49,8 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('python3 pack.py', pack)
         self.assertIn('--allow-missing-katex', build_guide)
         self.assertIn('--allow-missing-katex', readme)
+        self.assertIn('--audit-profile', build_guide)
+        self.assertIn('--audit-profile', readme)
         self.assertNotIn('静默失效', readme)
         self.assertNotIn('会提示资源缺失并跳过公式渲染', build_guide)
         self.assertIn('不生成或覆盖页面', readme)
@@ -73,6 +75,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('唯一的需求、决策、验收和跨会话恢复来源', template)
         self.assertIn('## 当前有效需求', template)
         self.assertIn('## 需求复核记录', template)
+        self.assertIn('W07 | 审计配置', template)
 
     def test_skill_uses_progressive_disclosure(self):
         skill_path = ROOT / 'SKILL.md'

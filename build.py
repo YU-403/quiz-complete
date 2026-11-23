@@ -4,7 +4,8 @@
 《刷题网站生成器》— 统一构建脚本
 用法: python build.py --input <题库路径> --title <标题> --output <输出目录>
                       [--modes topic,random,career,wrong,tag,exam] [--style 宣纸|瑞士|卡片]
-                      [--katex] [--allow-missing-katex] [--prefix <存储前缀>]
+                      [--katex] [--allow-missing-katex] [--audit-profile <JSON>]
+                      [--prefix <存储前缀>]
 
 依赖: Python 标准库（os, re, json, hashlib, argparse），零第三方依赖。
 
@@ -3140,6 +3141,95 @@ AUDIT_THRESHOLDS = {
 MULTI_CARDINALITY_TARGET_PCT = {1: 20, 2: 35, 3: 35, 4: 10}
 
 
+def load_audit_profile(profile_path):
+    """读取项目级审计覆盖项，并返回合并后的阈值与正确项目标。"""
+    import math
+
+    thresholds = dict(AUDIT_THRESHOLDS)
+    targets = dict(MULTI_CARDINALITY_TARGET_PCT)
+    with open(profile_path, 'r', encoding='utf-8') as profile_file:
+        data = json.load(profile_file)
+    if not isinstance(data, dict):
+        raise ValueError('审计配置顶层必须是 JSON 对象')
+
+    allowed = set(AUDIT_THRESHOLDS) | {'multi_cardinality_target_pct'}
+    unknown = sorted(set(data) - allowed)
+    if unknown:
+        raise ValueError('审计配置包含未知字段：%s' % ', '.join(unknown))
+
+    percent_keys = (
+        'single_pos_max_pct',
+        'multi_full_max_pct',
+        'multi_pattern_max_pct',
+        'multi_cardinality_tolerance_pct',
+    )
+    integer_keys = (
+        'multi_pattern_min_sample',
+        'option_duplicate_min_len',
+        'option_similarity_min_len',
+        'opt_len_gap_max',
+    )
+    for key in percent_keys:
+        if key not in data:
+            continue
+        value = data[key]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or not 0 <= value <= 100
+        ):
+            raise ValueError('%s 必须是 0–100 之间的数字' % key)
+        thresholds[key] = value
+
+    for key in integer_keys:
+        if key not in data:
+            continue
+        value = data[key]
+        minimum = 1 if key == 'multi_pattern_min_sample' else 0
+        if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+            raise ValueError('%s 必须是大于等于 %d 的整数' % (key, minimum))
+        thresholds[key] = value
+
+    if 'option_similarity_threshold' in data:
+        value = data['option_similarity_threshold']
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or not 0 <= value <= 1
+        ):
+            raise ValueError('option_similarity_threshold 必须是 0–1 之间的数字')
+        thresholds['option_similarity_threshold'] = value
+
+    if 'multi_cardinality_target_pct' in data:
+        raw_targets = data['multi_cardinality_target_pct']
+        expected_keys = {'1', '2', '3', '4'}
+        if not isinstance(raw_targets, dict) or set(raw_targets) != expected_keys:
+            raise ValueError(
+                'multi_cardinality_target_pct 必须且只能包含 1、2、3、4 四项'
+            )
+        merged_targets = {}
+        for key in sorted(expected_keys, key=int):
+            value = raw_targets[key]
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or not 0 <= value <= 100
+            ):
+                raise ValueError(
+                    'multi_cardinality_target_pct.%s 必须是 0–100 之间的数字'
+                    % key
+                )
+            merged_targets[int(key)] = value
+        if abs(sum(merged_targets.values()) - 100) > 1e-6:
+            raise ValueError('multi_cardinality_target_pct 四项总和必须为 100')
+        targets = merged_targets
+
+    return thresholds, targets
+
+
 # 位置敏感的选项：这类选项必须固定在末位，旋转会破坏其语义，故跳过硬性重排
 _FIXED_OPTION = re.compile(r'以上|上述|全都|都不对|都正确|其余|其他各项|前三项|后三项')
 
@@ -3368,11 +3458,11 @@ def _normalize_option_for_audit(text):
     return re.sub(r'\s+', '', body)
 
 
-def _option_similarity_audit(questions):
+def _option_similarity_audit(questions, thresholds=None):
     """返回 (完全重复组数, 重复选项数, 高相似对数, 示例列表)。"""
     import difflib
 
-    T = AUDIT_THRESHOLDS
+    T = AUDIT_THRESHOLDS if thresholds is None else thresholds
     by_file = collections.defaultdict(list)
     exact = collections.defaultdict(list)
     letters = 'ABCD'
@@ -3452,7 +3542,7 @@ def _option_similarity_audit(questions):
     return len(duplicate_groups), duplicate_count, len(similar_pairs), examples, similar_pairs
 
 
-def quality_audit(questions):
+def quality_audit(questions, thresholds=None, cardinality_targets=None):
     """构建后质量自检：把内容规范的量化标准变成可自动核查的指标。
 
     【为什么需要】
@@ -3470,7 +3560,12 @@ def quality_audit(questions):
     """
     import collections
 
-    T = AUDIT_THRESHOLDS
+    T = AUDIT_THRESHOLDS if thresholds is None else thresholds
+    targets = (
+        MULTI_CARDINALITY_TARGET_PCT
+        if cardinality_targets is None
+        else cardinality_targets
+    )
     stats = {}
     warns = []
 
@@ -3504,7 +3599,7 @@ def quality_audit(questions):
         if top_pct > T['single_pos_max_pct']:
             detail = ' / '.join('%s%d(%.0f%%)' % (k, pos.get(k, 0), 100.0 * pos.get(k, 0) / n)
                                 for k in 'ABCD')
-            warns.append('答案位置偏斜：%s，最高项占 %.0f%%（上限 %d%%）——押注单一选项即可得分'
+            warns.append('答案位置偏斜：%s，最高项占 %.0f%%（上限 %g%%）——押注单一选项即可得分'
                          % (detail, top_pct, T['single_pos_max_pct']))
 
     # ---- 3. 不定项答案结构 ----
@@ -3520,7 +3615,7 @@ def quality_audit(questions):
         stats['multi_full'] = full
         stats['multi_full_pct'] = pct
         if pct > T['multi_full_max_pct']:
-            warns.append('不定项全选率 %.0f%%（%d/%d，上限 %d%%）——一律全选即可得分'
+            warns.append('不定项全选率 %.0f%%（%d/%d，上限 %g%%）——一律全选即可得分'
                          % (pct, full, len(multis), T['multi_full_max_pct']))
 
         cardinality = collections.Counter(len(ans) for _q, ans in valid_multi_answers)
@@ -3540,7 +3635,7 @@ def quality_audit(questions):
             top_pattern_pct = stats['multi_top_pattern_pct']
             if top_pattern_pct > T['multi_pattern_max_pct']:
                 warns.append(
-                    '不定项具体组合集中：%s 占 %.0f%%（%d/%d，上限 %d%%）'
+                    '不定项具体组合集中：%s 占 %.0f%%（%d/%d，上限 %g%%）'
                     % (top_pattern, top_pattern_pct, top_count, n,
                        T['multi_pattern_max_pct'])
                 )
@@ -3556,10 +3651,11 @@ def quality_audit(questions):
                 k: 100.0 * cardinality.get(k, 0) / n for k in (1, 2, 3, 4)
             }
             card_issues = []
-            for k, target in MULTI_CARDINALITY_TARGET_PCT.items():
+            for k, target in targets.items():
                 actual = cardinality_pct[k]
-                if cardinality.get(k, 0) == 0 or abs(actual - target) > T['multi_cardinality_tolerance_pct']:
-                    card_issues.append('%d项 %.0f%%（目标 %d%%）' % (k, actual, target))
+                missing_required_group = target > 0 and cardinality.get(k, 0) == 0
+                if missing_required_group or abs(actual - target) > T['multi_cardinality_tolerance_pct']:
+                    card_issues.append('%d项 %.0f%%（目标 %g%%）' % (k, actual, target))
             if card_issues:
                 warns.append(
                     '不定项正确项数量结构偏离：%s——正确项数量必须由命题阶段调整，重排不能改变'
@@ -3591,7 +3687,7 @@ def quality_audit(questions):
 
     # ---- 5. 选项正文重复与高相似 ----
     dup_groups, dup_count, similar_count, dup_examples, similar_pairs = \
-        _option_similarity_audit(questions)
+        _option_similarity_audit(questions, T)
     stats['option_duplicate_groups'] = dup_groups
     stats['option_duplicate_occurrences'] = dup_count
     stats['option_similar_pairs'] = similar_count
@@ -3724,6 +3820,11 @@ def main():
     )
     parser.add_argument('--no-audit', dest='no_audit', action='store_true',
                         help='跳过构建后的质量自检（默认执行：答案位置 / 不定项结构 / 选项重复 / 长度 / ID）')
+    parser.add_argument(
+        '--audit-profile',
+        default='',
+        help='项目级审计阈值 JSON；只覆盖其中提供的字段',
+    )
     parser.add_argument('--strict-audit', action='store_true',
                         help='严格质量模式：任一审计告警都会使构建返回非零退出码')
     parser.add_argument('--no-balance', dest='no_balance', action='store_true',
@@ -3736,12 +3837,25 @@ def main():
     parser.add_argument('--custom-css', default='', help='自定义 CSS 代码或 CSS 变量覆盖（注入到 :root 中）')
     args = parser.parse_args()
 
+    audit_thresholds = dict(AUDIT_THRESHOLDS)
+    audit_targets = dict(MULTI_CARDINALITY_TARGET_PCT)
+    if args.audit_profile:
+        try:
+            audit_thresholds, audit_targets = load_audit_profile(
+                args.audit_profile
+            )
+        except (OSError, ValueError) as exc:
+            print(f"❌ 审计配置无效：{exc}")
+            sys.exit(2)
+
     print("=" * 50)
     print(f"  刷题网站生成器 — 构建脚本")
     print(f"  题库: {args.input}")
     print(f"  标题: {args.title}")
     print(f"  风格: {args.style}")
     print(f"  模式: {args.modes}")
+    if args.audit_profile:
+        print(f"  审计配置: {args.audit_profile}")
     print("=" * 50)
 
     # 解析题库
@@ -3875,7 +3989,11 @@ def main():
     # 质量自检：把 SKILL.md 的内容规范量化后自动核查（只告警，不阻断构建）。
     # 用 --no-audit 可跳过，适用于不关心内容指标、只求快速出页面的场景。
     if not args.no_audit:
-        _stats, _warns = quality_audit(all_questions)
+        _stats, _warns = quality_audit(
+            all_questions,
+            thresholds=audit_thresholds,
+            cardinality_targets=audit_targets,
+        )
         print_quality_audit(_stats, _warns)
         if args.strict_audit and _warns:
             print("\n❌ 严格审计未通过：请先修复上述告警再构建发布版本")
