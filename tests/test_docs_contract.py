@@ -45,6 +45,26 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('py -3 pack.py', pack)
         self.assertIn('python3 pack.py', pack)
 
+    def test_requirements_document_is_the_single_project_source(self):
+        skill = (ROOT / 'SKILL.md').read_text(encoding='utf-8')
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        template_path = ROOT / 'references/需求文档模板.md'
+        template = template_path.read_text(encoding='utf-8')
+
+        self.assertTrue(template_path.is_file())
+        self.assertFalse((ROOT / 'references/项目状态模板.md').exists())
+        self.assertIn('一次只问一个问题', skill)
+        self.assertIn('默认：无（必须选择）', skill)
+        self.assertIn('REQUIREMENTS.md', skill)
+        self.assertIn('不得放入 `题库/`', skill)
+        self.assertIn('REQUIREMENTS.md', readme)
+        self.assertNotIn('FACT.md', skill)
+        self.assertNotIn('JOURNAL', skill)
+        self.assertNotIn('长期记忆中的项目状态', readme)
+        self.assertIn('唯一的需求、决策、验收和跨会话恢复来源', template)
+        self.assertIn('## 当前有效需求', template)
+        self.assertIn('## 需求复核记录', template)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -20,7 +20,7 @@ REQUIRED_FILES = {
     TOP_LEVEL + 'LICENSE',
     TOP_LEVEL + 'THIRD_PARTY_NOTICES.md',
     TOP_LEVEL + 'references/模板维护.md',
-    TOP_LEVEL + 'references/项目状态模板.md',
+    TOP_LEVEL + 'references/需求文档模板.md',
 }
 EXCLUDED_PREFIXES = (
     TOP_LEVEL + 'pack.py',
@@ -82,6 +82,11 @@ class PackageContractTests(unittest.TestCase):
                 )
                 self.assertIn('WorkBuddy', readme)
                 self.assertIn('DeepSeek Harness（DSH）', readme)
+                self.assertIn('REQUIREMENTS.md', readme)
+                self.assertNotIn(
+                    TOP_LEVEL + 'references/项目状态模板.md',
+                    names,
+                )
 
             extracted = tmp_path / 'extracted'
             with zipfile.ZipFile(output_zip) as archive:
