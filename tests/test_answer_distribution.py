@@ -413,6 +413,54 @@ class AnswerDistributionTests(unittest.TestCase):
             [(q['id'], q['options'], q['answer']) for q in second],
         )
 
+    def test_build_output_contract_is_index_html_only(self):
+        with tempfile.TemporaryDirectory(prefix='quiz-complete-output-') as tmp:
+            tmp_path = pathlib.Path(tmp)
+            input_dir = tmp_path / 'input'
+            output_dir = tmp_path / 'output'
+            input_dir.mkdir()
+            (input_dir / 'questions.md').write_text(
+                markdown_for(make_mixed_questions()), encoding='utf-8'
+            )
+
+            command = [
+                sys.executable,
+                str(BUILD_PATH),
+                '--input', str(input_dir),
+                '--title', '产物契约测试',
+                '--output', str(output_dir),
+                '--modes', 'topic',
+            ]
+            first = subprocess.run(
+                command,
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=60,
+            )
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            self.assertEqual(
+                {path.name for path in output_dir.iterdir()},
+                {'index.html'},
+            )
+
+            second = subprocess.run(
+                command,
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=60,
+            )
+            self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+            self.assertEqual(
+                {path.name for path in output_dir.iterdir()},
+                {'index.html'},
+            )
+
     def test_strict_audit_cli_exit_codes(self):
         with tempfile.TemporaryDirectory(prefix='quiz-complete-v213-') as tmp:
             tmp_path = pathlib.Path(tmp)

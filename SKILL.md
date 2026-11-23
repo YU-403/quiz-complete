@@ -400,8 +400,9 @@ python <skill_dir>/build.py \
 **第三步：输出结构**
 
 - `index.html` — 刷题网站（纯前端，双击可用）
-- `build.bat` — 一键构建批处理（模板模式下指向 skill 目录的 build.py）
-- `README.md` — 使用说明
+
+构建阶段只自动生成 `index.html`，不生成 `build.bat` 或项目 README。
+后续题库变化由 Agent 重新运行 `build.py`；项目说明文档仅在用户要求时另行维护。
 
 ### 后续更新题库（自动重建）
 
