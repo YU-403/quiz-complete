@@ -1,0 +1,85 @@
+{
+  "skill_name": "quiz-complete",
+  "cases": [
+    {
+      "id": "trigger-01",
+      "query": "把这份现代汉语讲义做成 50 道题，再生成一个刷题网站。",
+      "should_trigger": true
+    },
+    {
+      "id": "trigger-02",
+      "query": "继续之前的题库，追加第三章并重新生成网站。",
+      "should_trigger": true
+    },
+    {
+      "id": "trigger-03",
+      "query": "参考这套期末真题的风格，批量生成 20 道单选题和 10 道判断题。",
+      "should_trigger": true
+    },
+    {
+      "id": "trigger-04",
+      "query": "我已有标准 Markdown 题库，请生成带专题和错题模式的刷题网站。",
+      "should_trigger": true
+    },
+    {
+      "id": "trigger-05",
+      "query": "先根据材料出 10 道校准题，我确认后再继续扩题。",
+      "should_trigger": true
+    },
+    {
+      "id": "trigger-06",
+      "query": "把这三章复习提纲转成带答案、解析和知识回溯的题集。",
+      "should_trigger": true
+    },
+    {
+      "id": "trigger-07",
+      "query": "修改现有题库里的三道错题，并自动重建网页。",
+      "should_trigger": true
+    },
+    {
+      "id": "trigger-08",
+      "query": "从这份样例题提炼风格，按该风格制作整套中国古代文学史练习题库。",
+      "should_trigger": true
+    },
+    {
+      "id": "trigger-09",
+      "query": "解释一下这道选择题为什么选 B。",
+      "should_trigger": false
+    },
+    {
+      "id": "trigger-10",
+      "query": "帮我点评这一道题的干扰项设计是否合理。",
+      "should_trigger": false
+    },
+    {
+      "id": "trigger-11",
+      "query": "把这个 PDF 转成 Markdown，暂时不需要出题。",
+      "should_trigger": false
+    },
+    {
+      "id": "trigger-12",
+      "query": "帮我开发一个收集学生反馈的问卷网页。",
+      "should_trigger": false
+    },
+    {
+      "id": "trigger-13",
+      "query": "设计一个支持学校组织、教师和学生的在线考试后台系统。",
+      "should_trigger": false
+    },
+    {
+      "id": "trigger-14",
+      "query": "根据这段材料写一份四十分钟的教学方案。",
+      "should_trigger": false
+    },
+    {
+      "id": "trigger-15",
+      "query": "直接回答这张试卷上的所有题，并给出正确答案。",
+      "should_trigger": false
+    },
+    {
+      "id": "trigger-16",
+      "query": "优化这个 React 项目现有页面的导航栏样式。",
+      "should_trigger": false
+    }
+  ]
+}

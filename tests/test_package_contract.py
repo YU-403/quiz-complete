@@ -24,6 +24,7 @@ REQUIRED_FILES = {
 }
 EXCLUDED_PREFIXES = (
     TOP_LEVEL + 'pack.py',
+    TOP_LEVEL + 'evals/',
     TOP_LEVEL + 'tests/',
     TOP_LEVEL + '.github/',
     TOP_LEVEL + '.gitignore',

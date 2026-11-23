@@ -1,6 +1,6 @@
 ---
 name: quiz-complete
-description: 从参考材料到刷题网站的一站式流水线：阶段一出题生成 Markdown 题集，阶段二调用模板 build.py 构建纯前端刷题网站。支持六种刷题模式、KaTeX 公式、进度持久化。触发词：出题、生成刷题网站、题库建站、帮我出几道题再做成网站。
+description: 当用户明确要求从参考材料批量生成整套题集、执行首轮校准、从标准 Markdown 题库构建刷题网站，或修改已有 QuizComplete 题库后重建时使用。不要用于解答、讲解或点评单道题，仅做 PDF/Markdown 转换，开发通用问卷、考试系统或网站，或撰写纯教学方案。
 license: MIT
 compatibility: 需要支持 Agent Skills 与本地文件访问的宿主；建站需要 Python 3.8+（仅标准库）；无需网络。
 ---

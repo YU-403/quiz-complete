@@ -1,0 +1,52 @@
+{
+  "skill_name": "quiz-complete",
+  "evals": [
+    {
+      "id": "requirements-one-question",
+      "name": "requirements-one-question-at-a-time",
+      "prompt": "使用工作目录 outputs/requirements-demo。材料是 evals/fixtures/psychology-notes.md。这一轮只初始化需求文档并继续按一次一问收集需求，不要生成题目。",
+      "expected_output": "创建工作目录和 REQUIREMENTS.md，记录工作目录与材料路径；随后只提出一个问题，而不是一次列出完整问题清单或开始出题。",
+      "files": [
+        "fixtures/psychology-notes.md"
+      ],
+      "expectations": [
+        "工作目录中存在 REQUIREMENTS.md，且未放入题库目录",
+        "需求文档记录用户给出的目录和材料路径及来源",
+        "下一步只提出一个尚未确认的问题",
+        "没有生成题目或网站"
+      ]
+    },
+    {
+      "id": "generate-calibrated-bank",
+      "name": "generate-calibrated-question-bank",
+      "prompt": "使用工作目录 outputs/calibrated-bank。材料是 evals/fixtures/psychology-notes.md，范围覆盖两章，生成 10 道题：6 道单选、4 道判断；简体，解析简洁，知识回溯到节，面向课程自测，难度达标。其他项按默认，跳过样题和首轮校准，只输出 Markdown 题集。",
+      "expected_output": "创建 REQUIREMENTS.md，记录所有已给需求和默认值；在题库目录输出恰好 10 道有效题，题型数量正确，不生成网站。",
+      "files": [
+        "fixtures/psychology-notes.md"
+      ],
+      "expectations": [
+        "REQUIREMENTS.md 已冻结并包含当前有效需求",
+        "题库中恰好包含 10 道题",
+        "单选 6 道、判断 4 道",
+        "题目覆盖两章并使用节级知识回溯",
+        "没有生成 index.html"
+      ]
+    },
+    {
+      "id": "build-existing-quiz",
+      "name": "build-site-from-existing-quiz",
+      "prompt": "使用 evals/fixtures/existing-quiz.md 构建刷题网站，输出到 outputs/existing-site，标题“认知心理学基础”，启用专题和错题模式，卡片风格，题库没有公式，发布前执行严格审计。",
+      "expected_output": "建立并更新 REQUIREMENTS.md，调用 build.py，严格审计通过，只生成 index.html，页面包含 4 道题和指定的两个模式。",
+      "files": [
+        "fixtures/existing-quiz.md"
+      ],
+      "expectations": [
+        "构建命令返回 0 且严格审计通过",
+        "输出目录只生成 index.html",
+        "页面包含 4 道题",
+        "页面只启用 topic 和 wrong 两个模式",
+        "REQUIREMENTS.md 记录建站决定和复核结果"
+      ]
+    }
+  ]
+}
