@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """QuizComplete 评估集与触发边界契约测试。"""
 
+import hashlib
 import json
 import pathlib
 import unittest
@@ -40,9 +41,9 @@ class EvaluationContractTests(unittest.TestCase):
                 )
 
     def test_trigger_dataset_has_eight_positive_and_eight_negative_cases(self):
-        data = json.loads(
-            (EVALS_DIR / 'trigger-cases.draft.json').read_text(encoding='utf-8')
-        )
+        trigger_path = EVALS_DIR / 'trigger-cases.json'
+        trigger_bytes = trigger_path.read_bytes()
+        data = json.loads(trigger_bytes.decode('utf-8'))
         self.assertEqual(data['skill_name'], 'quiz-complete')
         cases = data['cases']
         self.assertEqual(len(cases), 16)
@@ -50,6 +51,11 @@ class EvaluationContractTests(unittest.TestCase):
         self.assertEqual(sum(not case['should_trigger'] for case in cases), 8)
         self.assertEqual(len({case['id'] for case in cases}), 16)
         self.assertEqual(len({case['query'] for case in cases}), 16)
+        self.assertFalse((EVALS_DIR / 'trigger-cases.draft.json').exists())
+        expected_hash = (
+            EVALS_DIR / 'trigger-cases.sha256'
+        ).read_text(encoding='utf-8').split()[0].lower()
+        self.assertEqual(hashlib.sha256(trigger_bytes).hexdigest(), expected_hash)
 
     def test_description_declares_trigger_boundaries(self):
         skill = (ROOT / 'SKILL.md').read_text(encoding='utf-8')
