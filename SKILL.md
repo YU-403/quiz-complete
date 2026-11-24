@@ -64,7 +64,8 @@ metadata:
 3. 复用模板 `build.py`，不重新生成构建器。
 4. 正式产物只有 `index.html`。
 5. 构建成功需退出码为 0 且全部题块解析成功。
-6. 用户后续修改题库时，完成修改后直接重新运行构建并更新需求文档。
+6. 专题目录顺序写入 `W08`，默认按原书/材料目录，不得按章节标题拼音排序。
+7. 用户后续修改题库时，完成修改后直接重新运行构建并更新需求文档。
 
 第三方组件与许可说明见
 [`references/THIRD_PARTY_NOTICES.md`](references/THIRD_PARTY_NOTICES.md)。
@@ -93,6 +94,7 @@ metadata:
 - 任意题块解析失败，不生成或覆盖 `index.html`。
 - 使用 `--katex` 但资源不完整时，默认构建失败。
 - 正式发布构建使用 `--strict-audit`。
+- 专题模式顺序与 `REQUIREMENTS.md` 的 `W08` 不一致，不交付页面。
 
 ## 输出
 

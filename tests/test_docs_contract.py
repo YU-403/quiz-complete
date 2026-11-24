@@ -68,6 +68,9 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('--allow-missing-katex', readme)
         self.assertIn('--audit-profile', build_guide)
         self.assertIn('--audit-profile', readme)
+        self.assertIn('专题目录默认按原书或材料的目录顺序', build_guide)
+        self.assertIn('专题目录顺序', build_guide)
+        self.assertNotIn("localeCompare('zh-CN')", build_guide)
         self.assertNotIn('静默失效', readme)
         self.assertNotIn('会提示资源缺失并跳过公式渲染', build_guide)
         self.assertIn('不生成或覆盖页面', readme)
@@ -93,6 +96,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('## 当前有效需求', template)
         self.assertIn('## 需求复核记录', template)
         self.assertIn('W07 | 审计配置', template)
+        self.assertIn('W08 | 专题目录顺序', template)
 
     def test_skill_uses_progressive_disclosure(self):
         skill_path = ROOT / 'SKILL.md'
